@@ -2,6 +2,7 @@ package dev.tserato.pvPSystem;
 
 import com.mojang.brigadier.Command;
 import dev.tserato.pvPSystem.Database.Database;
+import dev.tserato.pvPSystem.MMR.MMR;
 import io.papermc.paper.command.brigadier.Commands;
 import io.papermc.paper.plugin.lifecycle.event.LifecycleEventManager;
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
@@ -140,6 +141,12 @@ public class PvPSystem extends JavaPlugin implements Listener {
         UUID playerUUID = player.getUniqueId();
         int playerMMR = Database.getMMR(playerUUID);
 
+        // If the player has no MMR, set the default MMR to 1000
+        if (playerMMR == -1) {
+            playerMMR = 1000;
+            Database.setMMR(playerUUID, playerMMR);  // Save the default MMR
+        }
+
         // Add the player to the queue
         Database.addToQueue(playerUUID);
 
@@ -181,9 +188,33 @@ public class PvPSystem extends JavaPlugin implements Listener {
         }
     }
 
+
     public void delFromQueue(Player player) {
         UUID playerUUID = player.getUniqueId();
         Database.removeFromQueue(playerUUID);
+    }
+
+    private void handleMMRAfterMatch(Player winner, Player loser) {
+        int winnerMMR = Database.getMMR(winner.getUniqueId());
+        int loserMMR = Database.getMMR(loser.getUniqueId());
+
+        // Calculate new MMRs
+        int newWinnerMMR = MMR.calculateNewMMR(winnerMMR, true, loserMMR);
+        int newLoserMMR = MMR.calculateNewMMR(loserMMR, false, winnerMMR);
+
+        // Get old and new ranks
+        String oldWinnerRank = MMR.getRankForMMR(winnerMMR);
+        String newWinnerRank = MMR.getRankForMMR(newWinnerMMR);
+        String oldLoserRank = MMR.getRankForMMR(loserMMR);
+        String newLoserRank = MMR.getRankForMMR(newLoserMMR);
+
+        // Update MMR and ranks in the database
+        Database.setMMR(winner.getUniqueId(), newWinnerMMR);
+        Database.setMMR(loser.getUniqueId(), newLoserMMR);
+
+        // Display rank change titles
+        winner.sendMessage(Component.text(MMR.rankChangeTitle(oldWinnerRank, newWinnerRank)).color(NamedTextColor.GREEN));
+        loser.sendMessage(Component.text(MMR.rankChangeTitle(oldLoserRank, newLoserRank)).color(NamedTextColor.RED));
     }
 
     public World createArenaWorld(String arenaName) {
@@ -285,7 +316,6 @@ public class PvPSystem extends JavaPlugin implements Listener {
 
     private void deleteArenaWorld(World arenaWorld) {
         String arenaName = arenaWorld.getName();
-        // Unload and delete the world folder
         Bukkit.getScheduler().runTask(this, () -> {
             Bukkit.unloadWorld(arenaWorld, false);
             File worldFolder = new File(Bukkit.getWorldContainer(), arenaName);
@@ -317,36 +347,31 @@ public class PvPSystem extends JavaPlugin implements Listener {
     @EventHandler
     public void onPlayerDeath(EntityDeathEvent event) {
         if (event.getEntity() instanceof Player player) {
-            // Identify the winner
             Player winner = player.getKiller();
             if (winner != null) {
-                // Announce winner
                 winner.sendMessage(Component.text("You have won the match!").color(NamedTextColor.GREEN));
 
-                // Get the arena world the players were in
                 World arenaWorld = playerArenaMap.get(winner.getUniqueId());
                 if (arenaWorld != null) {
-                    // Teleport the loser to spawn
                     player.teleport(Bukkit.getWorld("world").getSpawnLocation());
                 }
 
-                // Start the 15-second timer for the winner
                 winnerTimeMap.put(winner.getUniqueId(), System.currentTimeMillis());
 
-                // Teleport the winner back to spawn after 15 seconds
                 new BukkitRunnable() {
                     @Override
                     public void run() {
                         if (winner.isOnline()) {
                             winner.teleport(Bukkit.getWorld("world").getSpawnLocation());
                         }
-
-                        // Delete the arena world after the 15 seconds
                         if (arenaWorld != null) {
                             deleteArenaWorld(arenaWorld);
                         }
                     }
-                }.runTaskLater(this, 20L * 15);  // 15 seconds later
+                }.runTaskLater(this, 20L * 15);
+
+                // Handle MMR after match
+                handleMMRAfterMatch(winner, player);
             }
         }
     }

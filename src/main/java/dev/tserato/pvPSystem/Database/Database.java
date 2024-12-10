@@ -15,7 +15,7 @@ public class Database {
             if (conn != null) {
                 String createPlayersTable = "CREATE TABLE IF NOT EXISTS players ("
                         + "uuid TEXT PRIMARY KEY, "
-                        + "mmr INTEGER NOT NULL)";
+                        + "mmr INTEGER NOT NULL DEFAULT 1200)";
                 String createQueueTable = "CREATE TABLE IF NOT EXISTS queue ("
                         + "uuid TEXT PRIMARY KEY)";
                 try (Statement stmt = conn.createStatement()) {
@@ -36,6 +36,10 @@ public class Database {
             ResultSet rs = stmt.executeQuery();
             if (rs.next()) {
                 return rs.getInt("mmr");
+            } else {
+                // Player doesn't have an MMR record, so we assign the default value
+                setMMR(playerUUID, 1200); // Default MMR
+                return 1200; // Return default MMR
             }
         } catch (SQLException e) {
             Bukkit.getLogger().severe("Error fetching MMR: " + e.getMessage());
