@@ -9,15 +9,18 @@ import io.papermc.paper.command.brigadier.argument.ArgumentTypes;
 import io.papermc.paper.command.brigadier.argument.resolvers.selector.PlayerSelectorArgumentResolver;
 import io.papermc.paper.plugin.lifecycle.event.LifecycleEventManager;
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
-import io.papermc.paper.registry.RegistryKey;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
+import net.kyori.adventure.title.Title;
 import org.bukkit.*;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
+import org.bukkit.event.entity.EntitySpawnEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.Plugin;
@@ -25,6 +28,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.jetbrains.annotations.NotNull;
 
+import javax.swing.text.StyleContext;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -36,6 +40,7 @@ public class PvPSystem extends JavaPlugin implements Listener {
     private final Map<UUID, World> playerArenaMap = new HashMap<>();  // Tracks player's arenas
     private final Map<UUID, Long> winnerTimeMap = new HashMap<>(); // Tracks winner's time remaining
     private final PlayerQueue queue = new PlayerQueue();
+    private final Map<UUID, Boolean> spectatingPlayers = new HashMap<>();
 
     @Override
     public void onEnable() {
@@ -136,8 +141,8 @@ public class PvPSystem extends JavaPlugin implements Listener {
                     player1.sendMessage(Component.text("You have been matched! Teleporting to arena...").color(NamedTextColor.GREEN));
                     player2.sendMessage(Component.text("You have been matched! Teleporting to arena...").color(NamedTextColor.GREEN));
 
-                    Location loc1 = new Location(arenaWorld, 0, -60, 10);
-                    Location loc2 = new Location(arenaWorld, 0, -60, 0);
+                    Location loc1 = new Location(arenaWorld, 0, -60, 10, 180, 0);
+                    Location loc2 = new Location(arenaWorld, 0, -60, -10);
                     teleportWithCountdown(player1, loc1);
                     teleportWithCountdown(player2, loc2);
 
@@ -175,8 +180,8 @@ public class PvPSystem extends JavaPlugin implements Listener {
         Database.setMMR(loser.getUniqueId(), newLoserMMR);
 
         // Display rank change titles
-        winner.sendMessage(Component.text(MMR.rankChangeTitle(oldWinnerRank, newWinnerRank)).color(NamedTextColor.GREEN));
-        loser.sendMessage(Component.text(MMR.rankChangeTitle(oldLoserRank, newLoserRank)).color(NamedTextColor.RED));
+        winner.showTitle(Title.title(Component.text(MMR.rankChangeTitle(oldWinnerRank, newWinnerRank)).color(NamedTextColor.GREEN), Component.text("You won.").color(NamedTextColor.GREEN)));
+        loser.showTitle(Title.title(Component.text(MMR.rankChangeTitle(oldWinnerRank, newWinnerRank)).color(NamedTextColor.RED), Component.text("You won.").color(NamedTextColor.RED)));
     }
 
     public World createArenaWorld(String arenaName) {
@@ -231,10 +236,20 @@ public class PvPSystem extends JavaPlugin implements Listener {
             @Override
             public void run() {
                 if (countdown > 0) {
-                    player.sendMessage(Component.text("Match starting in " + countdown + " seconds...").color(NamedTextColor.YELLOW));
+                    if (countdown == 3) {
+                        player.showTitle(Title.title(Component.text(countdown).color(NamedTextColor.GREEN), Component.text("")));
+                    } else if (countdown == 2) {
+                        player.showTitle(Title.title(Component.text(countdown).color(NamedTextColor.YELLOW), Component.text("")));
+                    } else if (countdown == 1) {
+                        player.showTitle(Title.title(Component.text(countdown).color(NamedTextColor.RED), Component.text("")));
+                    } else {
+                        player.showTitle(Title.title(Component.text(countdown).color(NamedTextColor.AQUA), Component.text("")));
+                    }
+                    player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
                     countdown--;
                 } else {
-                    player.sendMessage(Component.text("Fight!").color(NamedTextColor.GREEN));
+                    player.showTitle(Title.title(Component.text("Fight!").color(NamedTextColor.DARK_PURPLE).decorate(TextDecoration.BOLD), Component.text("")));
+                    player.playSound(player.getLocation(), Sound.ENTITY_DRAGON_FIREBALL_EXPLODE, 1.0f, 1.0f);
                     frozenPlayers.put(player.getUniqueId(), false); // Unfreeze the player
                     cancel();
                 }
@@ -307,36 +322,69 @@ public class PvPSystem extends JavaPlugin implements Listener {
     }
 
     @EventHandler
-    public void onPlayerDeath(EntityDeathEvent event) {
-        if (event.getEntity() instanceof Player player) {
-            Player winner = player.getKiller();
-            if (winner != null) {
-                winner.sendMessage(Component.text("You have won the match!").color(NamedTextColor.GREEN));
+    public void onMobSpawn(EntitySpawnEvent event) {
+        if (event.getLocation().getWorld().getName().startsWith("arena_")) {
+            event.setCancelled(true);
+        }
+    }
 
-                World arenaWorld = playerArenaMap.get(winner.getUniqueId());
-                if (arenaWorld != null) {
-                    player.teleport(Bukkit.getWorld("world").getSpawnLocation());
+    @EventHandler
+    public void onDamage(EntityDamageEvent event) {
+        if (event.getEntity().getLocation().getWorld().getName().startsWith("arena_")) {
+            if (event.getEntity() instanceof Player player) {
+                if (spectatingPlayers.get(player.getUniqueId())) {
+                    event.setCancelled(true);
                 }
-
-                winnerTimeMap.put(winner.getUniqueId(), System.currentTimeMillis());
-
-                new BukkitRunnable() {
-                    @Override
-                    public void run() {
-                        if (winner.isOnline()) {
-                            winner.teleport(Bukkit.getWorld("world").getSpawnLocation());
-                        }
-                        if (arenaWorld != null) {
-                            deleteArenaWorld(arenaWorld);
-                        }
-                    }
-                }.runTaskLater(this, 20L * 15);
-
-                // Handle MMR after match
-                handleMMRAfterMatch(winner, player);
             }
         }
     }
+
+    @EventHandler
+    public void onPlayerDeath(EntityDeathEvent event) {
+        if (event.getEntity() instanceof Player player) {
+            if (player.getWorld().getName().startsWith("arena_")) {
+                Player winner = player.getKiller();
+                World arenaWorld = playerArenaMap.get(player.getUniqueId());
+
+                // Cancel the death event
+                event.setCancelled(true);
+
+                spectatingPlayers.put(player.getUniqueId(), true);
+                spectatingPlayers.put(winner.getUniqueId(), true);
+
+
+                Location loc1 = new Location(arenaWorld, 0, -60, 10, 180, 0);
+                Location loc2 = new Location(arenaWorld, 0, -60, -10);
+                player.teleport(loc1);
+                winner.teleport(loc2);
+
+
+                // Handle the winner's actions
+                if (winner != null) {
+                    winnerTimeMap.put(winner.getUniqueId(), System.currentTimeMillis());
+
+                    new BukkitRunnable() {
+                        @Override
+                        public void run() {
+                            if (winner.isOnline()) {
+                                winner.teleport(Bukkit.getWorld("world").getSpawnLocation());
+                                player.teleport(Bukkit.getWorld("world").getSpawnLocation());
+                                spectatingPlayers.put(player.getUniqueId(), false);
+                                spectatingPlayers.put(player.getUniqueId(), false);
+                            }
+                            if (arenaWorld != null) {
+                                deleteArenaWorld(arenaWorld);
+                            }
+                        }
+                    }.runTaskLater(this, 20L * 15);
+
+                    // Handle MMR adjustments after match
+                    handleMMRAfterMatch(winner, player);
+                }
+            }
+        }
+    }
+
 
     @Override
     public void onDisable() {

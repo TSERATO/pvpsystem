@@ -57,8 +57,8 @@ public class MMR {
 
     public static String rankChangeTitle(String oldRank, String newRank) {
         if (!oldRank.equals(newRank)) {
-            return "You have ranked up to " + newRank + "!";
+            return newRank;
         }
-        return "You have stayed at " + oldRank + ".";
+        return oldRank;
     }
 }
