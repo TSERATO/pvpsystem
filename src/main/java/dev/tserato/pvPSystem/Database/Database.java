@@ -13,7 +13,7 @@ public class Database {
             if (conn != null) {
                 String createPlayersTable = "CREATE TABLE IF NOT EXISTS players ("
                         + "uuid TEXT PRIMARY KEY, "
-                        + "mmr INTEGER NOT NULL DEFAULT 1200)";
+                        + "mmr INTEGER NOT NULL DEFAULT 300)";
                 try (Statement stmt = conn.createStatement()) {
                     stmt.execute(createPlayersTable);
                     Bukkit.getLogger().info("PvPSystem database setup successfully.");
@@ -33,13 +33,13 @@ public class Database {
                 return rs.getInt("mmr");
             } else {
                 // Player doesn't have an MMR record, so we assign the default value
-                setMMR(playerUUID, 1000); // Default MMR
-                return 1000; // Return default MMR
+                setMMR(playerUUID, 300); // Default MMR
+                return 300; // Return default MMR
             }
         } catch (SQLException e) {
             Bukkit.getLogger().severe("Error fetching MMR: " + e.getMessage());
         }
-        return 1000; // Default MMR
+        return 300; // Default MMR
     }
 
     public static void setMMR(UUID playerUUID, int mmr) {

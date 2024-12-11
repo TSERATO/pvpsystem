@@ -9,25 +9,25 @@ public class MMR {
     private static final Map<String, Integer> rankMMRThresholds = new HashMap<>();
     static {
         rankMMRThresholds.put("Wood", 0);
-        rankMMRThresholds.put("Stone I", 100);
-        rankMMRThresholds.put("Stone II", 200);
-        rankMMRThresholds.put("Stone III", 300);
-        rankMMRThresholds.put("Copper I", 400);
-        rankMMRThresholds.put("Copper II", 500);
-        rankMMRThresholds.put("Copper III", 600);
-        rankMMRThresholds.put("Iron I", 700);
-        rankMMRThresholds.put("Iron II", 800);
-        rankMMRThresholds.put("Iron III", 900);
-        rankMMRThresholds.put("Gold I", 1000);
-        rankMMRThresholds.put("Gold II", 1100);
-        rankMMRThresholds.put("Gold III", 1200);
-        rankMMRThresholds.put("Diamond I", 1300);
-        rankMMRThresholds.put("Diamond II", 1400);
-        rankMMRThresholds.put("Diamond III", 1500);
-        rankMMRThresholds.put("Netherite I", 1600);
-        rankMMRThresholds.put("Netherite II", 1700);
-        rankMMRThresholds.put("Netherite III", 1800);
-        rankMMRThresholds.put("Bedrock", 2000);
+        rankMMRThresholds.put("Stone I", 30);
+        rankMMRThresholds.put("Stone II", 60);
+        rankMMRThresholds.put("Stone III", 90);
+        rankMMRThresholds.put("Copper I", 120);
+        rankMMRThresholds.put("Copper II", 150);
+        rankMMRThresholds.put("Copper III", 180);
+        rankMMRThresholds.put("Iron I", 210);
+        rankMMRThresholds.put("Iron II", 240);
+        rankMMRThresholds.put("Iron III", 270);
+        rankMMRThresholds.put("Gold I", 300);
+        rankMMRThresholds.put("Gold II", 330);
+        rankMMRThresholds.put("Gold III", 360);
+        rankMMRThresholds.put("Diamond I", 390);
+        rankMMRThresholds.put("Diamond II", 420);
+        rankMMRThresholds.put("Diamond III", 450);
+        rankMMRThresholds.put("Netherite I", 480);
+        rankMMRThresholds.put("Netherite II", 510);
+        rankMMRThresholds.put("Netherite III", 540);
+        rankMMRThresholds.put("Bedrock", 570);
     }
 
     public static String getRankForMMR(int mmr) {
