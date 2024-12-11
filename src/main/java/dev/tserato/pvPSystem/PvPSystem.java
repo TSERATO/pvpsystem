@@ -6,6 +6,7 @@ import dev.tserato.pvPSystem.MMR.MMR;
 import dev.tserato.pvPSystem.Queue.PlayerQueue;
 import io.papermc.paper.command.brigadier.Commands;
 import io.papermc.paper.command.brigadier.argument.ArgumentTypes;
+import io.papermc.paper.command.brigadier.argument.resolvers.selector.PlayerSelectorArgumentResolver;
 import io.papermc.paper.plugin.lifecycle.event.LifecycleEventManager;
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
 import io.papermc.paper.registry.RegistryKey;
@@ -93,8 +94,7 @@ public class PvPSystem extends JavaPlugin implements Listener {
                                     Commands.argument("player", ArgumentTypes.player())
                                             .executes(ctx -> {
                                                 CommandSender sender = ctx.getSource().getSender();
-                                                String playerName = ctx.getArgument("player", String.class);
-                                                Player player = Bukkit.getPlayer(playerName);
+                                                Player player = ctx.getArgument("player", PlayerSelectorArgumentResolver.class).resolve(ctx.getSource()).getFirst();
                                                 assert player != null;
                                                 UUID playerUUID = player.getUniqueId();
                                                 int mmr = Database.getMMR(playerUUID);
