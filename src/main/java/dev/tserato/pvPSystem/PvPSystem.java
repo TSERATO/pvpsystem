@@ -5,8 +5,10 @@ import dev.tserato.pvPSystem.Database.Database;
 import dev.tserato.pvPSystem.MMR.MMR;
 import dev.tserato.pvPSystem.Queue.PlayerQueue;
 import io.papermc.paper.command.brigadier.Commands;
+import io.papermc.paper.command.brigadier.argument.ArgumentTypes;
 import io.papermc.paper.plugin.lifecycle.event.LifecycleEventManager;
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
+import io.papermc.paper.registry.RegistryKey;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.*;
@@ -33,57 +35,6 @@ public class PvPSystem extends JavaPlugin implements Listener {
     private final Map<UUID, World> playerArenaMap = new HashMap<>();  // Tracks player's arenas
     private final Map<UUID, Long> winnerTimeMap = new HashMap<>(); // Tracks winner's time remaining
     private final PlayerQueue queue = new PlayerQueue();
-
-    // Rank MMR Ranges and Colors
-    private final Map<String, Integer> rankMMRThresholds = new HashMap<>();
-
-    {
-        rankMMRThresholds.put("Wood", 0);
-        rankMMRThresholds.put("Stone I", 100);
-        rankMMRThresholds.put("Stone II", 200);
-        rankMMRThresholds.put("Stone III", 300);
-        rankMMRThresholds.put("Copper I", 400);
-        rankMMRThresholds.put("Copper II", 500);
-        rankMMRThresholds.put("Copper III", 600);
-        rankMMRThresholds.put("Iron I", 700);
-        rankMMRThresholds.put("Iron II", 800);
-        rankMMRThresholds.put("Iron III", 900);
-        rankMMRThresholds.put("Gold I", 1000);
-        rankMMRThresholds.put("Gold II", 1100);
-        rankMMRThresholds.put("Gold III", 1200);
-        rankMMRThresholds.put("Diamond I", 1300);
-        rankMMRThresholds.put("Diamond II", 1400);
-        rankMMRThresholds.put("Diamond III", 1500);
-        rankMMRThresholds.put("Netherite I", 1600);
-        rankMMRThresholds.put("Netherite II", 1700);
-        rankMMRThresholds.put("Netherite III", 1800);
-        rankMMRThresholds.put("Bedrock", 2000);
-    }
-
-    private final Map<String, NamedTextColor> rankColors = new HashMap<>();
-
-    {
-        rankColors.put("Wood", NamedTextColor.GRAY);
-        rankColors.put("Stone I", NamedTextColor.DARK_GRAY);
-        rankColors.put("Stone II", NamedTextColor.DARK_GRAY);
-        rankColors.put("Stone III", NamedTextColor.DARK_GRAY);
-        rankColors.put("Copper I", NamedTextColor.GOLD);
-        rankColors.put("Copper II", NamedTextColor.GOLD);
-        rankColors.put("Copper III", NamedTextColor.GOLD);
-        rankColors.put("Iron I", NamedTextColor.WHITE);
-        rankColors.put("Iron II", NamedTextColor.WHITE);
-        rankColors.put("Iron III", NamedTextColor.WHITE);
-        rankColors.put("Gold I", NamedTextColor.YELLOW);
-        rankColors.put("Gold II", NamedTextColor.YELLOW);
-        rankColors.put("Gold III", NamedTextColor.YELLOW);
-        rankColors.put("Diamond I", NamedTextColor.AQUA);
-        rankColors.put("Diamond II", NamedTextColor.AQUA);
-        rankColors.put("Diamond III", NamedTextColor.AQUA);
-        rankColors.put("Netherite I", NamedTextColor.DARK_PURPLE);
-        rankColors.put("Netherite II", NamedTextColor.DARK_PURPLE);
-        rankColors.put("Netherite III", NamedTextColor.DARK_PURPLE);
-        rankColors.put("Bedrock", NamedTextColor.BLACK);
-    }
 
     @Override
     public void onEnable() {
@@ -136,7 +87,30 @@ public class PvPSystem extends JavaPlugin implements Listener {
                     "Join the ranked queue",
                     List.of("lr")
             );
+            commands.register(
+                    Commands.literal("mmr")
+                            .then(
+                                    Commands.argument("player", ArgumentTypes.player())
+                                            .executes(ctx -> {
+                                                CommandSender sender = ctx.getSource().getSender();
+
+                                                Player player = ctx.getArgument("player", Player.class).getPlayer();
+                                                assert player != null;
+                                                UUID playerUUID = player.getUniqueId();
+                                                int mmr = Database.getMMR(playerUUID);
+                                                String rank = MMR.getRankForMMR(mmr);
+                                                sender.sendMessage(Component.text(player.getName() + " with UUID " + playerUUID + " has " + mmr + " MMR. This equals the rank of: " + rank).color(NamedTextColor.GREEN));
+                                                return Command.SINGLE_SUCCESS;
+                                            })
+                            ).build(),
+                    "Get the MMR of players",
+                    List.of("getmmr")
+            );
         });
+    }
+
+    public void getMMRForCommand() {
+
     }
 
     public void addToQueueAndSearch(Player player) {

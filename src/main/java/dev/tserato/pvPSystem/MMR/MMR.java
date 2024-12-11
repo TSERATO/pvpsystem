@@ -36,7 +36,7 @@ public class MMR {
                 return entry.getKey();
             }
         }
-        return "Bedrock"; // Default highest rank
+        return "Wood"; // Default highest rank
     }
 
     public static int getMMRForRank(String rank) {
@@ -44,7 +44,7 @@ public class MMR {
     }
 
     public static int calculateNewMMR(int currentMMR, boolean isWinner, int opponentMMR) {
-        int ratingChange = 50; // Base rating change (can be adjusted)
+        int ratingChange = 10; // Base rating change (can be adjusted)
 
         // If the player wins, they gain rating
         if (isWinner) {
