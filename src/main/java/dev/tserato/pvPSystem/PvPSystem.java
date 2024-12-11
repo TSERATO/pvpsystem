@@ -93,8 +93,8 @@ public class PvPSystem extends JavaPlugin implements Listener {
                                     Commands.argument("player", ArgumentTypes.player())
                                             .executes(ctx -> {
                                                 CommandSender sender = ctx.getSource().getSender();
-
-                                                Player player = ctx.getArgument("player", Player.class).getPlayer();
+                                                String playerName = ctx.getArgument("player", String.class);
+                                                Player player = Bukkit.getPlayer(playerName);
                                                 assert player != null;
                                                 UUID playerUUID = player.getUniqueId();
                                                 int mmr = Database.getMMR(playerUUID);
@@ -107,10 +107,6 @@ public class PvPSystem extends JavaPlugin implements Listener {
                     List.of("getmmr")
             );
         });
-    }
-
-    public void getMMRForCommand() {
-
     }
 
     public void addToQueueAndSearch(Player player) {
