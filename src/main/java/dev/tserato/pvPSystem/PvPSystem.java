@@ -3,6 +3,7 @@ package dev.tserato.pvPSystem;
 import com.mojang.brigadier.Command;
 import dev.tserato.pvPSystem.Database.Database;
 import dev.tserato.pvPSystem.MMR.MMR;
+import dev.tserato.pvPSystem.Queue.PlayerQueue;
 import io.papermc.paper.command.brigadier.Commands;
 import io.papermc.paper.plugin.lifecycle.event.LifecycleEventManager;
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
@@ -31,6 +32,7 @@ public class PvPSystem extends JavaPlugin implements Listener {
     private final Map<UUID, Boolean> frozenPlayers = new HashMap<>();
     private final Map<UUID, World> playerArenaMap = new HashMap<>();  // Tracks player's arenas
     private final Map<UUID, Long> winnerTimeMap = new HashMap<>(); // Tracks winner's time remaining
+    private final PlayerQueue queue = new PlayerQueue();
 
     // Rank MMR Ranges and Colors
     private final Map<String, Integer> rankMMRThresholds = new HashMap<>();
@@ -141,21 +143,20 @@ public class PvPSystem extends JavaPlugin implements Listener {
         UUID playerUUID = player.getUniqueId();
         int playerMMR = Database.getMMR(playerUUID);
 
-        // If the player has no MMR, set the default MMR to 1000
         if (playerMMR == -1) {
             playerMMR = 1000;
             Database.setMMR(playerUUID, playerMMR);  // Save the default MMR
         }
 
-        // Add the player to the queue
-        Database.addToQueue(playerUUID);
+        // Add player to the queue
+        queue.addPlayer(player, playerMMR);
+        player.sendMessage(Component.text("Looking for a ranked match...").color(NamedTextColor.YELLOW));
 
-        // Try to find a match
-        List<UUID> queue = Database.getQueue(playerMMR);
-        if (queue.size() >= 2) {
-            // Found a match
-            Player player1 = Bukkit.getPlayer(queue.get(0));
-            Player player2 = Bukkit.getPlayer(queue.get(1));
+        // Attempt to find a match
+        List<UUID> matchedPlayers = queue.findMatch();
+        if (matchedPlayers.size() == 2) {
+            Player player1 = Bukkit.getPlayer(matchedPlayers.get(0));
+            Player player2 = Bukkit.getPlayer(matchedPlayers.get(1));
 
             if (player1 != null && player2 != null) {
                 String arenaName = "arena_" + UUID.randomUUID().toString().substring(0, 8);
@@ -165,17 +166,11 @@ public class PvPSystem extends JavaPlugin implements Listener {
                     player1.sendMessage(Component.text("You have been matched! Teleporting to arena...").color(NamedTextColor.GREEN));
                     player2.sendMessage(Component.text("You have been matched! Teleporting to arena...").color(NamedTextColor.GREEN));
 
-                    // Teleport players to their specific locations
                     Location loc1 = new Location(arenaWorld, 0, -60, 10);
                     Location loc2 = new Location(arenaWorld, 0, -60, 0);
                     teleportWithCountdown(player1, loc1);
                     teleportWithCountdown(player2, loc2);
 
-                    // Remove the players from the queue
-                    Database.removeFromQueue(player1.getUniqueId());
-                    Database.removeFromQueue(player2.getUniqueId());
-
-                    // Track their arena
                     playerArenaMap.put(player1.getUniqueId(), arenaWorld);
                     playerArenaMap.put(player2.getUniqueId(), arenaWorld);
                 } else {
@@ -183,17 +178,14 @@ public class PvPSystem extends JavaPlugin implements Listener {
                     player2.sendMessage(Component.text("Failed to create arena. Please try again later.").color(NamedTextColor.RED));
                 }
             }
-        } else {
-            player.sendMessage(Component.text("Looking for a ranked match...").color(NamedTextColor.YELLOW));
         }
     }
 
 
     public void delFromQueue(Player player) {
-        UUID playerUUID = player.getUniqueId();
-        Database.removeFromQueue(playerUUID);
+        queue.removePlayer(player);
+        player.sendMessage(Component.text("You have left the ranked queue.").color(NamedTextColor.YELLOW));
     }
-
     private void handleMMRAfterMatch(Player winner, Player loser) {
         int winnerMMR = Database.getMMR(winner.getUniqueId());
         int loserMMR = Database.getMMR(loser.getUniqueId());
