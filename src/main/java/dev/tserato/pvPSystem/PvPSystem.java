@@ -94,6 +94,21 @@ public class PvPSystem extends JavaPlugin implements Listener {
                     List.of("lr")
             );
             commands.register(
+                    Commands.literal("lobby")
+                            .executes(ctx -> {
+                                CommandSender sender = ctx.getSource().getSender();
+                                if (!(sender instanceof Player player)) {
+                                    sender.sendMessage(Component.text("This command can only be used by players.").color(NamedTextColor.RED));
+                                    return Command.SINGLE_SUCCESS;
+                                }
+                                player.teleport(Bukkit.getWorld("world").getSpawnLocation());
+                                return Command.SINGLE_SUCCESS;
+                            })
+                            .build(),
+                    "Return to the lobby",
+                    List.of("l")
+            );
+            commands.register(
                     Commands.literal("mmr")
                             .then(
                                     Commands.argument("player", ArgumentTypes.player())
@@ -119,7 +134,7 @@ public class PvPSystem extends JavaPlugin implements Listener {
         int playerMMR = Database.getMMR(playerUUID);
 
         if (playerMMR == -1) {
-            playerMMR = 1000;
+            playerMMR = 300;
             Database.setMMR(playerUUID, playerMMR);  // Save the default MMR
         }
 
@@ -149,8 +164,8 @@ public class PvPSystem extends JavaPlugin implements Listener {
                     playerArenaMap.put(player1.getUniqueId(), arenaWorld);
                     playerArenaMap.put(player2.getUniqueId(), arenaWorld);
                 } else {
-                    player1.sendMessage(Component.text("Failed to create arena. Please try again later.").color(NamedTextColor.RED));
-                    player2.sendMessage(Component.text("Failed to create arena. Please try again later.").color(NamedTextColor.RED));
+                    player1.sendMessage(Component.text("Failed to create arena. Please contact the server admins.").color(NamedTextColor.RED));
+                    player2.sendMessage(Component.text("Failed to create arena. Please contact the server admins.").color(NamedTextColor.RED));
                 }
             }
         }
@@ -181,7 +196,7 @@ public class PvPSystem extends JavaPlugin implements Listener {
 
         // Display rank change titles
         winner.showTitle(Title.title(Component.text(MMR.rankChangeTitle(oldWinnerRank, newWinnerRank)).color(NamedTextColor.GREEN), Component.text("You won.").color(NamedTextColor.GREEN)));
-        loser.showTitle(Title.title(Component.text(MMR.rankChangeTitle(oldWinnerRank, newWinnerRank)).color(NamedTextColor.RED), Component.text("You won.").color(NamedTextColor.RED)));
+        loser.showTitle(Title.title(Component.text(MMR.rankChangeTitle(oldWinnerRank, newWinnerRank)).color(NamedTextColor.RED), Component.text("You lost.").color(NamedTextColor.RED)));
     }
 
     public World createArenaWorld(String arenaName) {
@@ -360,27 +375,27 @@ public class PvPSystem extends JavaPlugin implements Listener {
 
 
                 // Handle the winner's actions
-                if (winner != null) {
-                    winnerTimeMap.put(winner.getUniqueId(), System.currentTimeMillis());
+                winnerTimeMap.put(winner.getUniqueId(), System.currentTimeMillis());
 
-                    new BukkitRunnable() {
-                        @Override
-                        public void run() {
-                            if (winner.isOnline()) {
-                                winner.teleport(Bukkit.getWorld("world").getSpawnLocation());
-                                player.teleport(Bukkit.getWorld("world").getSpawnLocation());
-                                spectatingPlayers.put(player.getUniqueId(), false);
-                                spectatingPlayers.put(player.getUniqueId(), false);
-                            }
-                            if (arenaWorld != null) {
-                                deleteArenaWorld(arenaWorld);
-                            }
+                new BukkitRunnable() {
+                    @Override
+                    public void run() {
+                        if (winner.isOnline()) {
+                            winner.teleport(Objects.requireNonNull(Bukkit.getWorld("world")).getSpawnLocation());
+                            player.teleport(Objects.requireNonNull(Bukkit.getWorld("world")).getSpawnLocation());
+                            winner.sendMessage(Component.text("Teleporting back to lobby.").color(NamedTextColor.YELLOW));
+                            player.sendMessage(Component.text("Teleporting back to lobby.").color(NamedTextColor.YELLOW));
+                            spectatingPlayers.put(player.getUniqueId(), false);
+                            spectatingPlayers.put(player.getUniqueId(), false);
                         }
-                    }.runTaskLater(this, 20L * 15);
+                        if (arenaWorld != null) {
+                            deleteArenaWorld(arenaWorld);
+                        }
+                    }
+                }.runTaskLater(this, 20L * 15);
 
-                    // Handle MMR adjustments after match
-                    handleMMRAfterMatch(winner, player);
-                }
+                // Handle MMR adjustments after match
+                handleMMRAfterMatch(winner, player);
             }
         }
     }
