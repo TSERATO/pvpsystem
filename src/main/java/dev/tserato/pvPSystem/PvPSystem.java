@@ -15,16 +15,22 @@ import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.title.Title;
 import org.bukkit.*;
 import org.bukkit.command.CommandSender;
+import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntitySpawnEvent;
+import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.inventory.meta.PotionMeta;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.potion.PotionType;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.jetbrains.annotations.NotNull;
 
@@ -240,10 +246,116 @@ public class PvPSystem extends JavaPlugin implements Listener {
         }
     }
 
+    public void prepInventory(Player player) {
+        // Clear the player's inventory
+        player.getInventory().clear();
+
+        // Armor setup
+        ItemStack helmet = new ItemStack(Material.DIAMOND_HELMET);
+        ItemMeta helmetMeta = helmet.getItemMeta();
+        if (helmetMeta != null) {
+            helmetMeta.addEnchant(Enchantment.PROTECTION, 4, true);
+            helmetMeta.addEnchant(Enchantment.UNBREAKING, 3, true);
+            helmet.setItemMeta(helmetMeta);
+        }
+
+        ItemStack chestplate = new ItemStack(Material.DIAMOND_CHESTPLATE);
+        ItemMeta chestplateMeta = chestplate.getItemMeta();
+        if (chestplateMeta != null) {
+            chestplateMeta.addEnchant(Enchantment.PROTECTION, 4, true);
+            chestplateMeta.addEnchant(Enchantment.UNBREAKING, 3, true);
+            chestplate.setItemMeta(chestplateMeta);
+        }
+
+        ItemStack leggings = new ItemStack(Material.DIAMOND_LEGGINGS);
+        ItemMeta leggingsMeta = leggings.getItemMeta();
+        if (leggingsMeta != null) {
+            leggingsMeta.addEnchant(Enchantment.PROTECTION, 4, true);
+            leggingsMeta.addEnchant(Enchantment.UNBREAKING, 3, true);
+            leggings.setItemMeta(leggingsMeta);
+        }
+
+        ItemStack boots = new ItemStack(Material.DIAMOND_BOOTS);
+        ItemMeta bootsMeta = boots.getItemMeta();
+        if (bootsMeta != null) {
+            bootsMeta.addEnchant(Enchantment.PROTECTION, 4, true);
+            bootsMeta.addEnchant(Enchantment.UNBREAKING, 3, true);
+            boots.setItemMeta(bootsMeta);
+        }
+
+        player.getInventory().setHelmet(helmet);
+        player.getInventory().setChestplate(chestplate);
+        player.getInventory().setLeggings(leggings);
+        player.getInventory().setBoots(boots);
+
+        // Weapon setup
+        ItemStack sword = new ItemStack(Material.DIAMOND_SWORD);
+        ItemMeta swordMeta = sword.getItemMeta();
+        if (swordMeta != null) {
+            swordMeta.addEnchant(Enchantment.SHARPNESS, 5, true);
+            sword.setItemMeta(swordMeta);
+        }
+
+        ItemStack bow = new ItemStack(Material.BOW);
+        ItemMeta bowMeta = bow.getItemMeta();
+        if (bowMeta != null) {
+            bowMeta.addEnchant(Enchantment.POWER, 5, true);
+            bowMeta.addEnchant(Enchantment.PUNCH, 2, true);
+            bow.setItemMeta(bowMeta);
+        }
+
+        player.getInventory().addItem(sword);
+        player.getInventory().addItem(bow);
+
+        // Food and arrows
+        player.getInventory().addItem(new ItemStack(Material.COOKED_BEEF, 20));
+        player.getInventory().addItem(new ItemStack(Material.ARROW, 24));
+
+        // Potions setup
+        for (int i = 0; i < 16; i++) {
+            ItemStack healingPotion = new ItemStack(Material.SPLASH_POTION);
+            PotionMeta healingMeta = (PotionMeta) healingPotion.getItemMeta();
+            if (healingMeta != null) {
+                healingMeta.setBasePotionType(PotionType.STRONG_HEALING);
+                healingPotion.setItemMeta(healingMeta);
+            }
+            player.getInventory().addItem(healingPotion);
+        }
+
+        for (int i = 0; i < 8; i++) {
+            ItemStack speedPotion = new ItemStack(Material.SPLASH_POTION);
+            PotionMeta speedMeta = (PotionMeta) speedPotion.getItemMeta();
+            if (speedMeta != null) {
+                speedMeta.setBasePotionType(PotionType.STRONG_SWIFTNESS);
+                speedPotion.setItemMeta(speedMeta);
+            }
+            player.getInventory().addItem(speedPotion);
+
+            ItemStack strengthPotion = new ItemStack(Material.SPLASH_POTION);
+            PotionMeta strengthMeta = (PotionMeta) strengthPotion.getItemMeta();
+            if (strengthMeta != null) {
+                strengthMeta.setBasePotionType(PotionType.STRONG_STRENGTH);
+                strengthPotion.setItemMeta(strengthMeta);
+            }
+            player.getInventory().addItem(strengthPotion);
+
+            ItemStack regenPotion = new ItemStack(Material.SPLASH_POTION);
+            PotionMeta regenMeta = (PotionMeta) regenPotion.getItemMeta();
+            if (regenMeta != null) {
+                regenMeta.setBasePotionType(PotionType.REGENERATION);
+                regenPotion.setItemMeta(regenMeta);
+            }
+            player.getInventory().addItem(regenPotion);
+        }
+    }
+
+
     private void teleportWithCountdown(Player player, Location location) {
         // Teleport the player and mark them as frozen
         player.teleport(location);
         frozenPlayers.put(player.getUniqueId(), true);
+
+        prepInventory(player);
 
         new BukkitRunnable() {
             int countdown = 10;
@@ -285,6 +397,8 @@ public class PvPSystem extends JavaPlugin implements Listener {
         Player player = event.getPlayer();
         frozenPlayers.remove(player.getUniqueId()); // Clean up when the player leaves
 
+        player.getInventory().clear();
+
         // If player was in an arena, check if it's empty
         World arenaWorld = playerArenaMap.get(player.getUniqueId());
         if (arenaWorld != null) {
@@ -304,6 +418,21 @@ public class PvPSystem extends JavaPlugin implements Listener {
         }
 
         playerArenaMap.remove(player.getUniqueId());
+
+        World world = player.getWorld();
+        checkAndDeleteArenaWorld(world);
+    }
+
+    private void checkAndDeleteArenaWorld(World world) {
+        // Check if the world name starts with "arena_"
+        if (world.getName().startsWith("arena_")) {
+            // Check if the world is empty
+            long playerCount = world.getPlayers().size();
+            if (playerCount == 0) {
+                // Trigger the delete method
+                deleteArenaWorld(world);
+            }
+        }
     }
 
     private void deleteArenaWorld(World arenaWorld) {
@@ -355,6 +484,11 @@ public class PvPSystem extends JavaPlugin implements Listener {
     }
 
     @EventHandler
+    public void onPlayerChangedWorld(PlayerChangedWorldEvent event) {
+        checkAndDeleteArenaWorld(event.getFrom());
+    }
+
+    @EventHandler
     public void onPlayerDeath(EntityDeathEvent event) {
         if (event.getEntity() instanceof Player player) {
             if (player.getWorld().getName().startsWith("arena_")) {
@@ -363,6 +497,9 @@ public class PvPSystem extends JavaPlugin implements Listener {
 
                 // Cancel the death event
                 event.setCancelled(true);
+
+                winner.getInventory().clear();
+                player.getInventory().clear();
 
                 spectatingPlayers.put(player.getUniqueId(), true);
                 spectatingPlayers.put(winner.getUniqueId(), true);

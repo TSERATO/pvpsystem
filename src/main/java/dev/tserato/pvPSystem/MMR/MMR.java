@@ -31,12 +31,14 @@ public class MMR {
     }
 
     public static String getRankForMMR(int mmr) {
+        String lastRank = "Bedrock"; // Default to the lowest rank
         for (Map.Entry<String, Integer> entry : rankMMRThresholds.entrySet()) {
             if (mmr < entry.getValue()) {
-                return entry.getKey();
+                return lastRank;
             }
+            lastRank = entry.getKey(); // Update to the current rank
         }
-        return "Wood"; // Default highest rank
+        return lastRank; // If MMR exceeds the highest threshold, return the highest rank
     }
 
     public static int getMMRForRank(String rank) {
