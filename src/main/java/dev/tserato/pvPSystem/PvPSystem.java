@@ -251,6 +251,8 @@ public class PvPSystem extends JavaPlugin implements Listener {
         player.teleport(location);
         frozenPlayers.put(player.getUniqueId(), true);
 
+        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "kit give diamondpot " + player.getName());
+
         new BukkitRunnable() {
             int countdown = 10;
 
