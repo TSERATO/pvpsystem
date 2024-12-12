@@ -15,26 +15,25 @@ import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.title.Title;
 import org.bukkit.*;
 import org.bukkit.command.CommandSender;
-import org.bukkit.enchantments.Enchantment;
+import org.bukkit.entity.Arrow;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.ThrownPotion;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntitySpawnEvent;
+import org.bukkit.event.entity.ProjectileLaunchEvent;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.meta.ItemMeta;
-import org.bukkit.inventory.meta.PotionMeta;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.potion.PotionType;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.jetbrains.annotations.NotNull;
 
-import javax.swing.text.StyleContext;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -62,6 +61,13 @@ public class PvPSystem extends JavaPlugin implements Listener {
                 getLogger().severe("Failed to create PvPSystem folder!");
             }
         }
+
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                checkAndDeleteEmptyArenas();
+            }
+        }.runTaskTimerAsynchronously(this, 0L, 20L * 60);
 
         Database.setupDatabase();
 
@@ -108,6 +114,7 @@ public class PvPSystem extends JavaPlugin implements Listener {
                                     return Command.SINGLE_SUCCESS;
                                 }
                                 player.teleport(Bukkit.getWorld("world").getSpawnLocation());
+                                player.getInventory().clear();
                                 return Command.SINGLE_SUCCESS;
                             })
                             .build(),
@@ -207,7 +214,7 @@ public class PvPSystem extends JavaPlugin implements Listener {
 
     public World createArenaWorld(String arenaName) {
         File serverRoot = Bukkit.getWorldContainer();
-        File sourceWorld = new File(serverRoot, "arena_template");
+        File sourceWorld = new File(serverRoot, "template_arena");
         File arenaWorld = new File(serverRoot, arenaName);
 
         try {
@@ -232,11 +239,20 @@ public class PvPSystem extends JavaPlugin implements Listener {
     }
 
     private void copyFolder(File source, File destination) throws IOException {
+        if (!source.exists() || !source.isDirectory()) {
+            throw new IOException("Source folder does not exist or is not a directory: " + source.getPath());
+        }
+
         if (!destination.exists() && !destination.mkdirs()) {
             throw new IOException("Failed to create destination folder: " + destination.getPath());
         }
 
-        for (File file : Objects.requireNonNull(source.listFiles())) {
+        File[] files = source.listFiles();
+        if (files == null) {
+            throw new IOException("Failed to list files in source folder: " + source.getPath());
+        }
+
+        for (File file : files) {
             File destFile = new File(destination, file.getName());
             if (file.isDirectory()) {
                 copyFolder(file, destFile);
@@ -251,7 +267,12 @@ public class PvPSystem extends JavaPlugin implements Listener {
         player.teleport(location);
         frozenPlayers.put(player.getUniqueId(), true);
 
-        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "kit give diamondpot " + player.getName());
+        String playerName = player.getName();
+
+        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "kit give diamondpot " + playerName);
+        System.out.println("Executed: kit give diamondpot " + playerName);
+
+        player.setHealth(20);
 
         new BukkitRunnable() {
             int countdown = 10;
@@ -283,8 +304,43 @@ public class PvPSystem extends JavaPlugin implements Listener {
     @EventHandler
     public void onPlayerMove(PlayerMoveEvent event) {
         Player player = event.getPlayer();
+        // Use getOrDefault to avoid NullPointerException
         if (frozenPlayers.getOrDefault(player.getUniqueId(), false)) {
             event.setCancelled(true);
+        }
+    }
+
+    @EventHandler
+    public void onPlayerInteract(PlayerInteractEvent event) {
+        Player player = event.getPlayer();
+        if (frozenPlayers.getOrDefault(player.getUniqueId(), false)) {
+            ItemStack item = player.getInventory().getItemInMainHand();
+            if (item.getType() == Material.BOW) {
+                event.setCancelled(true);
+            }
+        }
+    }
+
+    @EventHandler
+    public void onProjectileLaunch(ProjectileLaunchEvent event) {
+        if (event.getEntity() instanceof Arrow || event.getEntity() instanceof ThrownPotion) {
+            if (event.getEntity().getShooter() instanceof Player) {
+                Player shooter = (Player) event.getEntity().getShooter();
+                if (frozenPlayers.getOrDefault(shooter.getUniqueId(), false)) {
+                    event.setCancelled(true);
+                }
+            }
+        }
+    }
+
+    private void checkAndDeleteEmptyArenas() {
+        for (World world : Bukkit.getWorlds()) {
+            if (world.getName().startsWith("arena_")) {
+                if (world.getPlayers().isEmpty()) {
+                    getLogger().info("Deleting empty arena world: " + world.getName());
+                    deleteArenaWorld(world);
+                }
+            }
         }
     }
 
@@ -364,17 +420,20 @@ public class PvPSystem extends JavaPlugin implements Listener {
     @EventHandler
     public void onMobSpawn(EntitySpawnEvent event) {
         if (event.getLocation().getWorld().getName().startsWith("arena_")) {
-            event.setCancelled(true);
+            if(event.getEntity().getType().isAlive()) {
+                event.setCancelled(true);
+            }
         }
     }
 
     @EventHandler
     public void onDamage(EntityDamageEvent event) {
-        if (event.getEntity().getLocation().getWorld().getName().startsWith("arena_")) {
-            if (event.getEntity() instanceof Player player) {
-                if (spectatingPlayers.get(player.getUniqueId())) {
-                    event.setCancelled(true);
-                }
+        if (event.getEntity() instanceof Player player) {
+            UUID playerUUID = player.getUniqueId();
+
+            // Check if the player is in the spectatingPlayers map and if they're spectating
+            if (spectatingPlayers.getOrDefault(playerUUID, false)) {
+                event.setCancelled(true); // Cancel the damage event if they are spectating
             }
         }
     }
@@ -396,6 +455,9 @@ public class PvPSystem extends JavaPlugin implements Listener {
 
                 winner.getInventory().clear();
                 player.getInventory().clear();
+
+                winner.setHealth(20);
+                player.setHealth(20);
 
                 spectatingPlayers.put(player.getUniqueId(), true);
                 spectatingPlayers.put(winner.getUniqueId(), true);
