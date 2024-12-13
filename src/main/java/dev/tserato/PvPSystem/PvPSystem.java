@@ -4,6 +4,8 @@ import com.mojang.brigadier.Command;
 import dev.tserato.PvPSystem.Database.Database;
 import dev.tserato.PvPSystem.MMR.MMR;
 import dev.tserato.PvPSystem.Queue.PlayerQueue;
+import dev.tserato.PvPSystem.Utils.ModeType;
+import dev.tserato.PvPSystem.Utils.ModeTypeArgument;
 import io.papermc.paper.command.brigadier.Commands;
 import io.papermc.paper.command.brigadier.argument.ArgumentTypes;
 import io.papermc.paper.command.brigadier.argument.resolvers.selector.PlayerSelectorArgumentResolver;
@@ -73,18 +75,17 @@ public class PvPSystem extends JavaPlugin implements Listener {
 
             commands.register(
                     Commands.literal("ranked")
-                            .executes(ctx -> {
-                                CommandSender sender = ctx.getSource().getSender();
-                                if (!(sender instanceof Player player)) {
-                                    sender.sendMessage(Component.text("This command can only be used by players.").color(NamedTextColor.RED));
-                                    return Command.SINGLE_SUCCESS;
-                                }
-                                addToQueueAndSearch(player);
-                                return Command.SINGLE_SUCCESS;
-                            })
-                            .build(),
-                    "Join the ranked queue",
-                    List.of("r")
+                            .then(
+                                    Commands.argument("mode", new ModeTypeArgument())
+                                            .executes(ctx -> {
+                                                CommandSender sender = ctx.getSource().getSender();
+                                                ModeType mode = ctx.getArgument("mode", ModeType.class);
+                                                System.out.println(mode);
+                                                return Command.SINGLE_SUCCESS;
+                                            })
+                            ).build(),
+                    "Choose your gamemode",
+                    List.of("rk")
             );
             commands.register(
                     Commands.literal("leaveranked")
