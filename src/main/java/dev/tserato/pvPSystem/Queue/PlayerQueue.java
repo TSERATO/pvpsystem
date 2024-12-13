@@ -6,7 +6,7 @@ import java.util.*;
 
 public class PlayerQueue {
 
-    private static final int MMR_TOLERANCE = 30; // Tolerance for matchmaking
+    private static final int MMR_TOLERANCE = 50; // Tolerance for matchmaking
     private final Map<UUID, Integer> queue = new HashMap<>(); // Player UUID to MMR mapping
 
     /**

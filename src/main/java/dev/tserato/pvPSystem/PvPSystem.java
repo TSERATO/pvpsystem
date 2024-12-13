@@ -15,15 +15,10 @@ import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.title.Title;
 import org.bukkit.*;
 import org.bukkit.command.CommandSender;
-import org.bukkit.entity.Arrow;
-import org.bukkit.entity.Player;
-import org.bukkit.entity.ThrownPotion;
+import org.bukkit.entity.*;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
-import org.bukkit.event.entity.EntityDamageEvent;
-import org.bukkit.event.entity.EntityDeathEvent;
-import org.bukkit.event.entity.EntitySpawnEvent;
-import org.bukkit.event.entity.ProjectileLaunchEvent;
+import org.bukkit.event.entity.*;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
@@ -31,6 +26,7 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.potion.PotionEffect;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.jetbrains.annotations.NotNull;
 
@@ -324,8 +320,7 @@ public class PvPSystem extends JavaPlugin implements Listener {
     @EventHandler
     public void onProjectileLaunch(ProjectileLaunchEvent event) {
         if (event.getEntity() instanceof Arrow || event.getEntity() instanceof ThrownPotion) {
-            if (event.getEntity().getShooter() instanceof Player) {
-                Player shooter = (Player) event.getEntity().getShooter();
+            if (event.getEntity().getShooter() instanceof Player shooter) {
                 if (frozenPlayers.getOrDefault(shooter.getUniqueId(), false)) {
                     event.setCancelled(true);
                 }
@@ -345,34 +340,73 @@ public class PvPSystem extends JavaPlugin implements Listener {
     }
 
     @EventHandler
+    public void onEntityDamageByEntity(EntityDamageByEntityEvent event) {
+        Entity damager = event.getDamager();
+        Entity target = event.getEntity();
+
+        if (damager instanceof Player && target instanceof Player) {
+            double originalDamage = event.getDamage();
+            double boostedDamage = originalDamage * 1.33;
+            event.setDamage(boostedDamage);
+        }
+    }
+
+    @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
         frozenPlayers.remove(player.getUniqueId()); // Clean up when the player leaves
 
         player.getInventory().clear();
 
-        // If player was in an arena, check if it's empty
+        // If player was in an arena, handle match logic
         World arenaWorld = playerArenaMap.get(player.getUniqueId());
-        if (arenaWorld != null) {
-            // Check if all players are gone from the arena
-            boolean isArenaEmpty = true;
+        if (arenaWorld != null && arenaWorld.getName().startsWith("arena_")) {
+            // Determine the remaining player in the arena
+            Player winner = null;
             for (Player p : arenaWorld.getPlayers()) {
-                if (p.isOnline()) {
-                    isArenaEmpty = false;
+                if (!p.equals(player) && p.isOnline()) {
+                    winner = p; // The remaining player becomes the winner
                     break;
                 }
             }
 
-            // If the arena is empty, delete it
-            if (isArenaEmpty) {
+            if (winner != null) {
+                // Declare final reference for inner class
+                final Player finalWinner = winner;
+
+                finalWinner.setHealth(20);
+                clearAllPotionEffects(finalWinner);
+
+                spectatingPlayers.put(finalWinner.getUniqueId(), true);
+
+                Location locWinner = new Location(arenaWorld, 0, -60, -10);
+                finalWinner.teleport(locWinner);
+
+                finalWinner.getInventory().clear();
+
+                // Schedule teleportation back to the lobby
+                winnerTimeMap.put(finalWinner.getUniqueId(), System.currentTimeMillis());
+                new BukkitRunnable() {
+                    @Override
+                    public void run() {
+                        if (finalWinner.isOnline()) {
+                            finalWinner.teleport(Objects.requireNonNull(Bukkit.getWorld("world")).getSpawnLocation());
+                            finalWinner.sendMessage(Component.text("Teleporting back to lobby.").color(NamedTextColor.YELLOW));
+                            spectatingPlayers.put(finalWinner.getUniqueId(), false);
+                            finalWinner.getInventory().clear();
+                        }
+                        deleteArenaWorld(arenaWorld);
+                    }
+                }.runTaskLater(this, 20L * 15);
+
+                // Handle MMR adjustments after match
+                handleMMRAfterMatch(finalWinner, player);
+            } else {
+                // No remaining player, just delete the arena
                 deleteArenaWorld(arenaWorld);
             }
         }
-
         playerArenaMap.remove(player.getUniqueId());
-
-        World world = player.getWorld();
-        checkAndDeleteArenaWorld(world);
     }
 
     private void checkAndDeleteArenaWorld(World world) {
@@ -390,12 +424,16 @@ public class PvPSystem extends JavaPlugin implements Listener {
     private void deleteArenaWorld(World arenaWorld) {
         String arenaName = arenaWorld.getName();
         Bukkit.getScheduler().runTask(this, () -> {
-            Bukkit.unloadWorld(arenaWorld, false);
-            File worldFolder = new File(Bukkit.getWorldContainer(), arenaName);
-            try {
-                deleteFolder(worldFolder);
-            } catch (IOException e) {
-                getLogger().severe("Failed to delete arena world: " + e.getMessage());
+            if (Bukkit.unloadWorld(arenaWorld, false)) { // Unload the world safely
+                File worldFolder = new File(Bukkit.getWorldContainer(), arenaName);
+                try {
+                    deleteFolder(worldFolder);
+                    getLogger().info("Successfully deleted arena world: " + arenaName);
+                } catch (IOException e) {
+                    getLogger().severe("Failed to delete arena world: " + e.getMessage());
+                }
+            } else {
+                getLogger().severe("Failed to unload arena world: " + arenaName);
             }
         });
     }
@@ -453,8 +491,7 @@ public class PvPSystem extends JavaPlugin implements Listener {
                 // Cancel the death event
                 event.setCancelled(true);
 
-                winner.getInventory().clear();
-                player.getInventory().clear();
+                assert winner != null;
 
                 winner.setHealth(20);
                 player.setHealth(20);
@@ -462,6 +499,10 @@ public class PvPSystem extends JavaPlugin implements Listener {
                 spectatingPlayers.put(player.getUniqueId(), true);
                 spectatingPlayers.put(winner.getUniqueId(), true);
 
+                clearAllPotionEffects(winner);
+                clearAllPotionEffects(player);
+
+                clearEntitiesExceptPlayers(arenaWorld);
 
                 Location loc1 = new Location(arenaWorld, 0, -60, 10, 180, 0);
                 Location loc2 = new Location(arenaWorld, 0, -60, -10);
@@ -482,6 +523,8 @@ public class PvPSystem extends JavaPlugin implements Listener {
                             player.sendMessage(Component.text("Teleporting back to lobby.").color(NamedTextColor.YELLOW));
                             spectatingPlayers.put(player.getUniqueId(), false);
                             spectatingPlayers.put(player.getUniqueId(), false);
+                            winner.getInventory().clear();
+                            player.getInventory().clear();
                         }
                         if (arenaWorld != null) {
                             deleteArenaWorld(arenaWorld);
@@ -495,6 +538,20 @@ public class PvPSystem extends JavaPlugin implements Listener {
         }
     }
 
+    public void clearAllPotionEffects(Player player) {
+        for (PotionEffect effect : player.getActivePotionEffects()) {
+            player.removePotionEffect(effect.getType());
+        }
+    }
+
+    public void clearEntitiesExceptPlayers(World world) {
+        for (Entity entity : world.getEntities()) {
+            // Check if the entity is not a player
+            if (entity.getType() != EntityType.PLAYER) {
+                entity.remove(); // Remove the entity
+            }
+        }
+    }
 
     @Override
     public void onDisable() {
