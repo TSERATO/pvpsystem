@@ -526,9 +526,7 @@ public class PvPSystem extends JavaPlugin implements Listener {
                             winner.getInventory().clear();
                             player.getInventory().clear();
                         }
-                        if (arenaWorld != null) {
-                            deleteArenaWorld(arenaWorld);
-                        }
+                        deleteArenaWorld(arenaWorld);
                     }
                 }.runTaskLater(this, 20L * 15);
 
