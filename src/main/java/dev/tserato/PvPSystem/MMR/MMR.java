@@ -1,4 +1,4 @@
-package dev.tserato.pvPSystem.MMR;
+package dev.tserato.PvPSystem.MMR;
 
 import java.util.HashMap;
 import java.util.Map;

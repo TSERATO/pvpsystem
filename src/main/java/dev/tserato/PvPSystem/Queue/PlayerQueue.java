@@ -1,4 +1,4 @@
-package dev.tserato.pvPSystem.Queue;
+package dev.tserato.PvPSystem.Queue;
 
 import org.bukkit.entity.Player;
 

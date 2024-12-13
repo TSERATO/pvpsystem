@@ -1,4 +1,4 @@
 name: PvPSystem
 version: '1.0-SNAPSHOT'
-main: dev.tserato.pvPSystem.PvPSystem
+main: dev.tserato.PvPSystem.PvPSystem
 api-version: '1.21'

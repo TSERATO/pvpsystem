@@ -1,9 +1,9 @@
-package dev.tserato.pvPSystem;
+package dev.tserato.PvPSystem;
 
 import com.mojang.brigadier.Command;
-import dev.tserato.pvPSystem.Database.Database;
-import dev.tserato.pvPSystem.MMR.MMR;
-import dev.tserato.pvPSystem.Queue.PlayerQueue;
+import dev.tserato.PvPSystem.Database.Database;
+import dev.tserato.PvPSystem.MMR.MMR;
+import dev.tserato.PvPSystem.Queue.PlayerQueue;
 import io.papermc.paper.command.brigadier.Commands;
 import io.papermc.paper.command.brigadier.argument.ArgumentTypes;
 import io.papermc.paper.command.brigadier.argument.resolvers.selector.PlayerSelectorArgumentResolver;
@@ -309,7 +309,7 @@ public class PvPSystem extends JavaPlugin implements Listener {
     @EventHandler
     public void onPlayerInteract(PlayerInteractEvent event) {
         Player player = event.getPlayer();
-        if (frozenPlayers.getOrDefault(player.getUniqueId(), false)) {
+        if (frozenPlayers.getOrDefault(player.getUniqueId(), false) || spectatingPlayers.getOrDefault(player.getUniqueId(), false)) {
             ItemStack item = player.getInventory().getItemInMainHand();
             if (item.getType() == Material.BOW) {
                 event.setCancelled(true);
@@ -321,7 +321,7 @@ public class PvPSystem extends JavaPlugin implements Listener {
     public void onProjectileLaunch(ProjectileLaunchEvent event) {
         if (event.getEntity() instanceof Arrow || event.getEntity() instanceof ThrownPotion) {
             if (event.getEntity().getShooter() instanceof Player shooter) {
-                if (frozenPlayers.getOrDefault(shooter.getUniqueId(), false)) {
+                if (frozenPlayers.getOrDefault(shooter.getUniqueId(), false) || spectatingPlayers.getOrDefault(shooter.getUniqueId(), false)) {
                     event.setCancelled(true);
                 }
             }
@@ -495,6 +495,9 @@ public class PvPSystem extends JavaPlugin implements Listener {
 
                 winner.setHealth(20);
                 player.setHealth(20);
+
+                winner.getInventory().clear();
+                player.getInventory().clear();
 
                 spectatingPlayers.put(player.getUniqueId(), true);
                 spectatingPlayers.put(winner.getUniqueId(), true);

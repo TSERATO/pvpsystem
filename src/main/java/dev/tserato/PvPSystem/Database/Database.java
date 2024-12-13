@@ -1,4 +1,4 @@
-package dev.tserato.pvPSystem.Database;
+package dev.tserato.PvPSystem.Database;
 
 import org.bukkit.Bukkit;
 
