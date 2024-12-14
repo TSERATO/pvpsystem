@@ -16,7 +16,7 @@ repositories {
         url = "https://oss.sonatype.org/content/groups/public/"
     }
     maven {
-        url = 'https://repo.citizensnpcs.co/'
+        url = 'https://repo.extendedclip.com/content/repositories/placeholderapi/'
     }
 }
 
@@ -24,7 +24,7 @@ dependencies {
     compileOnly("io.papermc.paper:paper-api:1.21-R0.1-SNAPSHOT")
     implementation 'commons-io:commons-io:2.14.0'
     implementation 'org.xerial:sqlite-jdbc:3.47.1.0'
-    compileOnly 'net.citizensnpcs:citizensapi:2.0.37-SNAPSHOT'
+    compileOnly 'me.clip:placeholderapi:2.11.6'
 }
 
 def targetJavaVersion = 21

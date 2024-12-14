@@ -2,10 +2,9 @@ package dev.tserato.PvPSystem;
 
 import com.mojang.brigadier.Command;
 import dev.tserato.PvPSystem.Database.Database;
+import dev.tserato.PvPSystem.Expansion.PAPIExpansion;
 import dev.tserato.PvPSystem.MMR.MMR;
 import dev.tserato.PvPSystem.Queue.PlayerQueue;
-import dev.tserato.PvPSystem.Utils.ModeType;
-import dev.tserato.PvPSystem.Utils.ModeTypeArgument;
 import io.papermc.paper.command.brigadier.Commands;
 import io.papermc.paper.command.brigadier.argument.ArgumentTypes;
 import io.papermc.paper.command.brigadier.argument.resolvers.selector.PlayerSelectorArgumentResolver;
@@ -21,10 +20,7 @@ import org.bukkit.entity.*;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.*;
-import org.bukkit.event.player.PlayerChangedWorldEvent;
-import org.bukkit.event.player.PlayerInteractEvent;
-import org.bukkit.event.player.PlayerMoveEvent;
-import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.*;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -36,6 +32,8 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.*;
+
+import static dev.tserato.PvPSystem.MMR.MMR.getRankForMMR;
 
 public class PvPSystem extends JavaPlugin implements Listener {
 
@@ -69,23 +67,30 @@ public class PvPSystem extends JavaPlugin implements Listener {
 
         Database.setupDatabase();
 
+        if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) { //
+            new PAPIExpansion(this).register(); //
+        }
+
         @NotNull LifecycleEventManager<Plugin> manager = this.getLifecycleManager();
         manager.registerEventHandler(LifecycleEvents.COMMANDS, event -> {
             final Commands commands = event.registrar();
 
             commands.register(
                     Commands.literal("ranked")
-                            .then(
-                                    Commands.argument("mode", new ModeTypeArgument())
-                                            .executes(ctx -> {
-                                                CommandSender sender = ctx.getSource().getSender();
-                                                ModeType mode = ctx.getArgument("mode", ModeType.class);
-                                                System.out.println(mode);
-                                                return Command.SINGLE_SUCCESS;
-                                            })
-                            ).build(),
-                    "Choose your gamemode",
-                    List.of("rk")
+                            .executes(ctx -> {
+                                CommandSender sender = ctx.getSource().getSender();
+                                if (!(sender instanceof Player player)) {
+                                    sender.sendMessage(Component.text("This command can only be used by players.").color(NamedTextColor.RED));
+                                    return Command.SINGLE_SUCCESS;
+                                }
+                                if (!spectatingPlayers.getOrDefault(player.getUniqueId(), false)) {
+                                    addToQueueAndSearch(player);
+                                }
+                                return Command.SINGLE_SUCCESS;
+                            })
+                            .build(),
+                    "Join the ranked queue",
+                    List.of("lr")
             );
             commands.register(
                     Commands.literal("leaveranked")
@@ -116,7 +121,7 @@ public class PvPSystem extends JavaPlugin implements Listener {
                             })
                             .build(),
                     "Return to the lobby",
-                    List.of("l")
+                    List.of("l", "leave")
             );
             commands.register(
                     Commands.literal("mmr")
@@ -128,7 +133,7 @@ public class PvPSystem extends JavaPlugin implements Listener {
                                                 assert player != null;
                                                 UUID playerUUID = player.getUniqueId();
                                                 int mmr = Database.getMMR(playerUUID);
-                                                String rank = MMR.getRankForMMR(mmr);
+                                                String rank = getRankForMMR(mmr);
                                                 sender.sendMessage(Component.text(player.getName() + " with UUID " + playerUUID + " has " + mmr + " MMR. This equals the rank of: " + rank).color(NamedTextColor.GREEN));
                                                 return Command.SINGLE_SUCCESS;
                                             })
@@ -186,6 +191,7 @@ public class PvPSystem extends JavaPlugin implements Listener {
         queue.removePlayer(player);
         player.sendMessage(Component.text("You have left the ranked queue.").color(NamedTextColor.YELLOW));
     }
+
     private void handleMMRAfterMatch(Player winner, Player loser) {
         int winnerMMR = Database.getMMR(winner.getUniqueId());
         int loserMMR = Database.getMMR(loser.getUniqueId());
@@ -195,18 +201,55 @@ public class PvPSystem extends JavaPlugin implements Listener {
         int newLoserMMR = MMR.calculateNewMMR(loserMMR, false, winnerMMR);
 
         // Get old and new ranks
-        String oldWinnerRank = MMR.getRankForMMR(winnerMMR);
-        String newWinnerRank = MMR.getRankForMMR(newWinnerMMR);
-        String oldLoserRank = MMR.getRankForMMR(loserMMR);
-        String newLoserRank = MMR.getRankForMMR(newLoserMMR);
+        String oldWinnerRank = getRankForMMR(winnerMMR);
+        String newWinnerRank = getRankForMMR(newWinnerMMR);
+        String oldLoserRank = getRankForMMR(loserMMR);
+        String newLoserRank = getRankForMMR(newLoserMMR);
+
+        // Get colors for the new ranks
+        NamedTextColor winnerColor = MMR.getColorForRank(newWinnerRank);
+        NamedTextColor loserColor = MMR.getColorForRank(newLoserRank);
 
         // Update MMR and ranks in the database
         Database.setMMR(winner.getUniqueId(), newWinnerMMR);
         Database.setMMR(loser.getUniqueId(), newLoserMMR);
 
-        // Display rank change titles
-        winner.showTitle(Title.title(Component.text(MMR.rankChangeTitle(oldWinnerRank, newWinnerRank)).color(NamedTextColor.GREEN), Component.text("You won.").color(NamedTextColor.GREEN)));
-        loser.showTitle(Title.title(Component.text(MMR.rankChangeTitle(oldWinnerRank, newWinnerRank)).color(NamedTextColor.RED), Component.text("You lost.").color(NamedTextColor.RED)));
+        // Check if the winner or loser has ranked up or down
+        boolean winnerRankedUp = !oldWinnerRank.equals(newWinnerRank) && !oldWinnerRank.split(" ")[0].equals(newWinnerRank.split(" ")[0]);
+        boolean loserRankedDown = !oldLoserRank.equals(newLoserRank) && !oldLoserRank.split(" ")[0].equals(newLoserRank.split(" ")[0]);
+
+        // Display rank change titles with conditional messages
+        if (winnerRankedUp) {
+            winner.showTitle(
+                    Title.title(
+                            Component.text(newWinnerRank).color(winnerColor),
+                            Component.text("You ranked up!").color(NamedTextColor.GREEN)
+                    )
+            );
+        } else {
+            winner.showTitle(
+                    Title.title(
+                            Component.text(MMR.rankChangeTitle(oldWinnerRank, newWinnerRank)).color(winnerColor),
+                            Component.text("You won.").color(NamedTextColor.GREEN)
+                    )
+            );
+        }
+
+        if (loserRankedDown) {
+            loser.showTitle(
+                    Title.title(
+                            Component.text(newLoserRank).color(loserColor),
+                            Component.text("You ranked down!").color(NamedTextColor.RED)
+                    )
+            );
+        } else {
+            loser.showTitle(
+                    Title.title(
+                            Component.text(MMR.rankChangeTitle(oldLoserRank, newLoserRank)).color(loserColor),
+                            Component.text("You lost.").color(NamedTextColor.RED)
+                    )
+            );
+        }
     }
 
     public World createArenaWorld(String arenaName) {
@@ -319,6 +362,15 @@ public class PvPSystem extends JavaPlugin implements Listener {
     }
 
     @EventHandler
+    public void onPlayerDropItem(PlayerDropItemEvent event) {
+        Player player = event.getPlayer();
+        if (frozenPlayers.getOrDefault(player.getUniqueId(), false)) {
+            event.setCancelled(true);
+        }
+    }
+
+
+    @EventHandler
     public void onProjectileLaunch(ProjectileLaunchEvent event) {
         if (event.getEntity() instanceof Arrow || event.getEntity() instanceof ThrownPotion) {
             if (event.getEntity().getShooter() instanceof Player shooter) {
@@ -425,7 +477,6 @@ public class PvPSystem extends JavaPlugin implements Listener {
     private void deleteArenaWorld(World arenaWorld) {
         String arenaName = arenaWorld.getName();
         Bukkit.getScheduler().runTask(this, () -> {
-            if (Bukkit.unloadWorld(arenaWorld, false)) { // Unload the world safely
                 File worldFolder = new File(Bukkit.getWorldContainer(), arenaName);
                 try {
                     deleteFolder(worldFolder);
@@ -433,9 +484,6 @@ public class PvPSystem extends JavaPlugin implements Listener {
                 } catch (IOException e) {
                     getLogger().severe("Failed to delete arena world: " + e.getMessage());
                 }
-            } else {
-                getLogger().severe("Failed to unload arena world: " + arenaName);
-            }
         });
     }
 

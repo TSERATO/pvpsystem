@@ -1,12 +1,16 @@
 package dev.tserato.PvPSystem.MMR;
 
-import java.util.HashMap;
+import net.kyori.adventure.text.format.NamedTextColor;
+
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 public class MMR {
 
     // MMR thresholds for ranking
-    private static final Map<String, Integer> rankMMRThresholds = new HashMap<>();
+    private static final Map<String, Integer> rankMMRThresholds = new LinkedHashMap<>(); // Preserve order
+    private static final Map<String, NamedTextColor> rankColors = new LinkedHashMap<>(); // Color for each rank group
+
     static {
         rankMMRThresholds.put("Wood", 0);
         rankMMRThresholds.put("Stone I", 30);
@@ -28,17 +32,35 @@ public class MMR {
         rankMMRThresholds.put("Netherite II", 510);
         rankMMRThresholds.put("Netherite III", 540);
         rankMMRThresholds.put("Bedrock", 570);
+
+        // Define colors for rank groups
+        rankColors.put("Wood", NamedTextColor.GRAY);
+        rankColors.put("Stone", NamedTextColor.DARK_GRAY);
+        rankColors.put("Copper", NamedTextColor.GOLD);
+        rankColors.put("Iron", NamedTextColor.WHITE);
+        rankColors.put("Gold", NamedTextColor.YELLOW);
+        rankColors.put("Diamond", NamedTextColor.AQUA);
+        rankColors.put("Netherite", NamedTextColor.LIGHT_PURPLE);
+        rankColors.put("Bedrock", NamedTextColor.DARK_PURPLE);
     }
 
     public static String getRankForMMR(int MMR) {
-        // Iterate through the map and find the rank that corresponds to the MMR
+        String currentRank = "Gold I"; // Default rank if no thresholds are met
         for (Map.Entry<String, Integer> entry : rankMMRThresholds.entrySet()) {
-            if (MMR < entry.getValue()) {
-                return entry.getKey();
+            if (MMR >= entry.getValue()) {
+                currentRank = entry.getKey(); // Update rank as long as MMR meets the threshold
+            } else {
+                break; // Stop checking once MMR is below a threshold
             }
         }
-        // If the MMR is higher than the highest threshold, return "Bedrock"
-        return "Bedrock";
+        return currentRank;
+    }
+
+
+    public static NamedTextColor getColorForRank(String rank) {
+        // Match the rank group (e.g., "Stone I" matches "Stone")
+        String rankGroup = rank.split(" ")[0];
+        return rankColors.getOrDefault(rankGroup, NamedTextColor.WHITE);
     }
 
     public static int getMMRForRank(String rank) {
@@ -46,13 +68,11 @@ public class MMR {
     }
 
     public static int calculateNewMMR(int currentMMR, boolean isWinner, int opponentMMR) {
-        int ratingChange = 10; // Base rating change (can be adjusted)
+        int ratingChange = 10;
 
-        // If the player wins, they gain rating
         if (isWinner) {
             return currentMMR + ratingChange;
         } else {
-            // If the player loses, they lose rating
             return currentMMR - ratingChange;
         }
     }
