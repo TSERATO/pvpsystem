@@ -3,7 +3,10 @@ package dev.tserato.PvPSystem;
 import com.mojang.brigadier.Command;
 import dev.tserato.PvPSystem.Database.Database;
 import dev.tserato.PvPSystem.Expansion.PAPIExpansion;
+import dev.tserato.PvPSystem.GUI.GUIManager;
 import dev.tserato.PvPSystem.MMR.MMR;
+import dev.tserato.PvPSystem.Match.Match;
+import dev.tserato.PvPSystem.Match.MatchManager;
 import dev.tserato.PvPSystem.Queue.PlayerQueue;
 import io.papermc.paper.command.brigadier.Commands;
 import io.papermc.paper.command.brigadier.argument.ArgumentTypes;
@@ -20,8 +23,12 @@ import org.bukkit.entity.*;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.*;
+import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.*;
+import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffect;
@@ -42,10 +49,18 @@ public class PvPSystem extends JavaPlugin implements Listener {
     private final Map<UUID, Long> winnerTimeMap = new HashMap<>(); // Tracks winner's time remaining
     private final PlayerQueue queue = new PlayerQueue();
     private final Map<UUID, Boolean> spectatingPlayers = new HashMap<>();
+    private PAPIExpansion papiExpansion;
+    private MatchManager matchManager;
+    private GUIManager guiManager;
 
     @Override
     public void onEnable() {
+        matchManager = new MatchManager();
+        guiManager = new GUIManager(matchManager);
+
+
         Bukkit.getPluginManager().registerEvents(this, this);
+        getServer().getPluginManager().registerEvents(guiManager, this);
 
         getLogger().info("Starting up PvPSystem");
 
@@ -67,9 +82,10 @@ public class PvPSystem extends JavaPlugin implements Listener {
 
         Database.setupDatabase();
 
-        if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) { //
-            new PAPIExpansion(this).register(); //
-        }
+        this.papiExpansion = new PAPIExpansion(this); //
+
+        papiExpansion.register();
+
 
         @NotNull LifecycleEventManager<Plugin> manager = this.getLifecycleManager();
         manager.registerEventHandler(LifecycleEvents.COMMANDS, event -> {
@@ -90,7 +106,7 @@ public class PvPSystem extends JavaPlugin implements Listener {
                             })
                             .build(),
                     "Join the ranked queue",
-                    List.of("lr")
+                    List.of("rk")
             );
             commands.register(
                     Commands.literal("leaveranked")
@@ -104,8 +120,23 @@ public class PvPSystem extends JavaPlugin implements Listener {
                                 return Command.SINGLE_SUCCESS;
                             })
                             .build(),
-                    "Join the ranked queue",
+                    "Leave the ranked queue",
                     List.of("lr")
+            );
+            commands.register(
+                    Commands.literal("leaderboard")
+                            .executes(ctx -> {
+                                CommandSender sender = ctx.getSource().getSender();
+                                if (!(sender instanceof Player player)) {
+                                    sender.sendMessage(Component.text("This command can only be used by players.").color(NamedTextColor.RED));
+                                    return Command.SINGLE_SUCCESS;
+                                }
+                                openTopMMRGUI(player);
+                                return Command.SINGLE_SUCCESS;
+                            })
+                            .build(),
+                    "Return to the lobby",
+                    List.of("lb")
             );
             commands.register(
                     Commands.literal("lobby")
@@ -117,11 +148,27 @@ public class PvPSystem extends JavaPlugin implements Listener {
                                 }
                                 player.teleport(Bukkit.getWorld("world").getSpawnLocation());
                                 player.getInventory().clear();
+                                player.setGameMode(GameMode.SURVIVAL);
                                 return Command.SINGLE_SUCCESS;
                             })
                             .build(),
                     "Return to the lobby",
                     List.of("l", "leave")
+            );
+            commands.register(
+                    Commands.literal("matches")
+                            .executes(ctx -> {
+                                CommandSender sender = ctx.getSource().getSender();
+                                if (!(sender instanceof Player player)) {
+                                    sender.sendMessage(Component.text("This command can only be used by players.").color(NamedTextColor.RED));
+                                    return Command.SINGLE_SUCCESS;
+                                }
+                                guiManager.openMatchGUI(player);
+                                return Command.SINGLE_SUCCESS;
+                            })
+                            .build(),
+                    "Opens the Matches GUI",
+                    List.of("")
             );
             commands.register(
                     Commands.literal("mmr")
@@ -178,11 +225,65 @@ public class PvPSystem extends JavaPlugin implements Listener {
 
                     playerArenaMap.put(player1.getUniqueId(), arenaWorld);
                     playerArenaMap.put(player2.getUniqueId(), arenaWorld);
+
+                    // Add the match to the MatchManager
+                    Match match = new Match(player1, player2, arenaWorld);
+                    matchManager.addMatch(match); // Add match to MatchManager
                 } else {
                     player1.sendMessage(Component.text("Failed to create arena. Please contact the server admins.").color(NamedTextColor.RED));
                     player2.sendMessage(Component.text("Failed to create arena. Please contact the server admins.").color(NamedTextColor.RED));
                 }
             }
+        }
+    }
+
+    public void openTopMMRGUI(Player player) {
+        // Fetch the top placeholders from the PAPIExpansion class
+        Map<String, String> topMMRPlaceholders = papiExpansion.getTopMMRPlaceholders();
+
+        // Create a new inventory with a size of 18 (2 rows) and a title
+        Inventory topMMRInventory = Bukkit.createInventory(null, 18, "Top MMR Players");
+
+        // Populate the inventory with player heads
+        int slot = 0;
+        for (Map.Entry<String, String> entry : topMMRPlaceholders.entrySet()) {
+            String placeholderKey = entry.getKey(); // Example: "top_1"
+            String placeholderValue = entry.getValue(); // Example: "PlayerName - Rank (MMR)"
+
+            // Extract player name and details from placeholder value
+            String[] parts = placeholderValue.split(" - ");
+            if (parts.length >= 2) {
+                String playerName = parts[0];
+                String rankAndMMR = parts[1];
+
+                // Create the player head item
+                ItemStack playerHead = new ItemStack(Material.PLAYER_HEAD);
+                SkullMeta meta = (SkullMeta) playerHead.getItemMeta();
+
+                if (meta != null) {
+                    // Set the player head's owner
+                    meta.setOwningPlayer(Bukkit.getOfflinePlayer(playerName));
+
+                    // Set display name and tooltip (lore)
+                    meta.setDisplayName(ChatColor.GOLD + playerName);
+                    meta.setLore(Arrays.asList(ChatColor.GRAY + rankAndMMR));
+                    playerHead.setItemMeta(meta);
+                }
+
+                // Add the player head to the inventory
+                topMMRInventory.setItem(slot, playerHead);
+                slot++;
+            }
+        }
+
+        // Open the inventory for the player
+        player.openInventory(topMMRInventory);
+    }
+
+    @EventHandler
+    public void onInventoryClick(InventoryClickEvent event) {
+        if (event.getView().getTitle().equals("Top MMR Players")) {
+            event.setCancelled(true);
         }
     }
 
@@ -314,6 +415,8 @@ public class PvPSystem extends JavaPlugin implements Listener {
 
         player.setHealth(20);
 
+        updateTabAppearance(player, true);
+
         new BukkitRunnable() {
             int countdown = 10;
 
@@ -339,6 +442,17 @@ public class PvPSystem extends JavaPlugin implements Listener {
                 }
             }
         }.runTaskTimer(this, 0L, 20L); // Run every second (20 ticks)
+    }
+
+    private void updateTabAppearance(Player player, boolean inMatch) {
+        if (inMatch) {
+            // Using 'obfuscated' effect or muted color to simulate the "grayed-out" or faded look
+            player.playerListName(Component.text("⚔ ").color(NamedTextColor.GRAY) // Keep the sword emoji normal
+                    .append(Component.text(player.getName()).color(NamedTextColor.GRAY).decorate(TextDecoration.ITALIC))); // Italicize and gray the player name
+        } else {
+            // Normal appearance
+            player.playerListName(Component.text(player.getName()).color(NamedTextColor.WHITE));
+        }
     }
 
     @EventHandler
@@ -411,6 +525,8 @@ public class PvPSystem extends JavaPlugin implements Listener {
 
         player.getInventory().clear();
 
+        updateTabAppearance(player, false);
+
         // If player was in an arena, handle match logic
         World arenaWorld = playerArenaMap.get(player.getUniqueId());
         if (arenaWorld != null && arenaWorld.getName().startsWith("arena_")) {
@@ -458,7 +574,14 @@ public class PvPSystem extends JavaPlugin implements Listener {
                 // No remaining player, just delete the arena
                 deleteArenaWorld(arenaWorld);
             }
+
+            // Remove the match from MatchManager
+            matchManager.getActiveMatches().stream()
+                    .filter(match -> match.getArenaWorld().equals(arenaWorld))
+                    .findFirst().ifPresent(matchToRemove -> matchManager.removeMatch(matchToRemove));
+
         }
+
         playerArenaMap.remove(player.getUniqueId());
     }
 
@@ -542,14 +665,18 @@ public class PvPSystem extends JavaPlugin implements Listener {
 
                 assert winner != null;
 
+                // Reset players and handle cleanup
                 winner.setHealth(20);
                 player.setHealth(20);
 
                 winner.getInventory().clear();
                 player.getInventory().clear();
 
-                spectatingPlayers.put(player.getUniqueId(), true);
                 spectatingPlayers.put(winner.getUniqueId(), true);
+                spectatingPlayers.put(player.getUniqueId(), true);
+
+                updateTabAppearance(winner, false);
+                updateTabAppearance(player, false);
 
                 clearAllPotionEffects(winner);
                 clearAllPotionEffects(player);
@@ -561,8 +688,6 @@ public class PvPSystem extends JavaPlugin implements Listener {
                 player.teleport(loc1);
                 winner.teleport(loc2);
 
-
-                // Handle the winner's actions
                 winnerTimeMap.put(winner.getUniqueId(), System.currentTimeMillis());
 
                 new BukkitRunnable() {
@@ -574,7 +699,7 @@ public class PvPSystem extends JavaPlugin implements Listener {
                             winner.sendMessage(Component.text("Teleporting back to lobby.").color(NamedTextColor.YELLOW));
                             player.sendMessage(Component.text("Teleporting back to lobby.").color(NamedTextColor.YELLOW));
                             spectatingPlayers.put(player.getUniqueId(), false);
-                            spectatingPlayers.put(player.getUniqueId(), false);
+                            spectatingPlayers.put(winner.getUniqueId(), false);
                             winner.getInventory().clear();
                             player.getInventory().clear();
                         }
@@ -582,8 +707,14 @@ public class PvPSystem extends JavaPlugin implements Listener {
                     }
                 }.runTaskLater(this, 20L * 15);
 
-                // Handle MMR adjustments after match
+                // Handle MMR adjustments
                 handleMMRAfterMatch(winner, player);
+
+                // Remove the match from the MatchManager
+                matchManager.getActiveMatches().stream()
+                        .filter(match -> match.getArenaWorld().equals(arenaWorld))
+                        .findFirst().ifPresent(matchToRemove -> matchManager.removeMatch(matchToRemove));
+
             }
         }
     }

@@ -13,6 +13,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import static dev.tserato.PvPSystem.MMR.MMR.getRankForMMR;
+
 public class PAPIExpansion extends PlaceholderExpansion {
 
     private final JavaPlugin plugin;
@@ -52,7 +54,7 @@ public class PAPIExpansion extends PlaceholderExpansion {
         return null;
     }
 
-    private Map<String, String> getTopMMRPlaceholders() {
+    public Map<String, String> getTopMMRPlaceholders() {
         Map<String, String> topPlaceholders = new HashMap<>();
 
         // Get all players' UUIDs and MMRs
@@ -75,7 +77,7 @@ public class PAPIExpansion extends PlaceholderExpansion {
             OfflinePlayer player = Bukkit.getOfflinePlayer(playerUUID);
 
             // Example format: "PlayerName - 1234 MMR"
-            String placeholderValue = player.getName() + " - " + mmr + " MMR";
+            String placeholderValue = player.getName() + " - " + getRankForMMR(mmr) + " (" + mmr + ")";
 
             // Save the placeholder
             topPlaceholders.put("top_" + (i + 1), placeholderValue);
