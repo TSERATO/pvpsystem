@@ -29,6 +29,7 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.SkullMeta;
+import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffect;
@@ -100,7 +101,11 @@ public class PvPSystem extends JavaPlugin implements Listener {
                                     return Command.SINGLE_SUCCESS;
                                 }
                                 if (!spectatingPlayers.getOrDefault(player.getUniqueId(), false)) {
-                                    addToQueueAndSearch(player);
+                                    if (!matchManager.isPlayerInMatch(player)) {
+                                        addToQueueAndSearch(player);
+                                    } else {
+                                        player.sendMessage(Component.text("You can't queue while being in a match.").color(NamedTextColor.RED));
+                                    }
                                 }
                                 return Command.SINGLE_SUCCESS;
                             })
@@ -256,6 +261,9 @@ public class PvPSystem extends JavaPlugin implements Listener {
                 String playerName = parts[0];
                 String rankAndMMR = parts[1];
 
+                // Get the player's UUID from the database
+                UUID playerUUID = Bukkit.getOfflinePlayer(playerName).getUniqueId();
+
                 // Create the player head item
                 ItemStack playerHead = new ItemStack(Material.PLAYER_HEAD);
                 SkullMeta meta = (SkullMeta) playerHead.getItemMeta();
@@ -267,6 +275,11 @@ public class PvPSystem extends JavaPlugin implements Listener {
                     // Set display name and tooltip (lore)
                     meta.setDisplayName(ChatColor.GOLD + playerName);
                     meta.setLore(Arrays.asList(ChatColor.GRAY + rankAndMMR));
+
+                    // Store the player's UUID in the PersistentDataContainer
+                    NamespacedKey key = new NamespacedKey("pvpsystem", "player_uuid");
+                    meta.getPersistentDataContainer().set(key, PersistentDataType.STRING, playerUUID.toString());
+
                     playerHead.setItemMeta(meta);
                 }
 
@@ -283,10 +296,71 @@ public class PvPSystem extends JavaPlugin implements Listener {
     @EventHandler
     public void onInventoryClick(InventoryClickEvent event) {
         if (event.getView().getTitle().equals("Top MMR Players")) {
+            event.setCancelled(true); // Prevent taking items
+
+            // Check if the clicked item is a player head
+            if (event.getCurrentItem() != null && event.getCurrentItem().getItemMeta() != null &&
+                    event.getCurrentItem().getItemMeta() instanceof SkullMeta) {
+
+                SkullMeta meta = (SkullMeta) event.getCurrentItem().getItemMeta();
+
+                OfflinePlayer clickedPlayer = meta.getOwningPlayer();
+                Player player = (Player) event.getWhoClicked();
+                openPlayerStatsGUI(player, clickedPlayer);
+            }
+        } else if (event.getView().getTitle().startsWith("Player Stats - ")) {
             event.setCancelled(true);
         }
     }
 
+
+    public void openPlayerStatsGUI(Player viewer, OfflinePlayer clickedPlayer) {
+        // Get the player's UUID
+        UUID playerUUID = clickedPlayer.getUniqueId();
+
+        // Fetch the player's statistics (wins, losses, and total games)
+        String winStats = String.valueOf(Database.getWins(playerUUID));
+        String lossStats = String.valueOf(Database.getLosses(playerUUID));
+
+        // Create a new inventory for displaying the player's stats
+        Inventory statsInventory = Bukkit.createInventory(null, 9, "Player Stats - " + clickedPlayer.getName());
+
+        // Create an item to display the stats in the GUI
+        ItemStack winsItem = new ItemStack(Material.NETHERITE_SWORD);
+        ItemMeta winsMeta = winsItem.getItemMeta();
+
+        ItemStack lossItem = new ItemStack(Material.WOODEN_SWORD);
+        ItemMeta lossMeta = lossItem.getItemMeta();
+
+        if (winsMeta != null) {
+            // Set the display name and lore (stats)
+            winsMeta.setDisplayName(ChatColor.GREEN + "Wins for " + clickedPlayer.getName());
+            winsMeta.setLore(Arrays.asList(
+                    ChatColor.AQUA + "MMR: " + Database.getMMR(playerUUID),
+                    ChatColor.GRAY + winStats
+            ));
+
+            winsItem.setItemMeta(winsMeta);
+        }
+
+        if (lossMeta != null) {
+            // Set the display name and lore (stats)
+            lossMeta.setDisplayName(ChatColor.RED + "Losses for " + clickedPlayer.getName());
+            lossMeta.setLore(Arrays.asList(
+                    ChatColor.AQUA + "MMR: " + Database.getMMR(playerUUID),
+                    ChatColor.GRAY + lossStats
+            ));
+
+            lossItem.setItemMeta(lossMeta);
+        }
+
+        // Set the stats item in the center slot
+        statsInventory.setItem(2, winsItem);
+        statsInventory.setItem(6, lossItem);
+
+        // Open the stats inventory for the viewer (the player who clicked the head)
+        viewer.openInventory(statsInventory);
+    }
 
     public void delFromQueue(Player player) {
         queue.removePlayer(player);
@@ -411,7 +485,6 @@ public class PvPSystem extends JavaPlugin implements Listener {
         String playerName = player.getName();
 
         Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "kit give diamondpot " + playerName);
-        System.out.println("Executed: kit give diamondpot " + playerName);
 
         player.setHealth(20);
 
