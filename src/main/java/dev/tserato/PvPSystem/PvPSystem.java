@@ -521,7 +521,7 @@ public class PvPSystem extends JavaPlugin implements Listener {
         if (inMatch) {
             // Using 'obfuscated' effect or muted color to simulate the "grayed-out" or faded look
             player.playerListName(Component.text("⚔ ").color(NamedTextColor.GRAY) // Keep the sword emoji normal
-                    .append(Component.text(player.getName()).color(NamedTextColor.GRAY).decorate(TextDecoration.ITALIC))); // Italicize and gray the player name
+                    .append(Component.text(player.getName()).color(NamedTextColor.GRAY))); // Italicize and gray the player name
         } else {
             // Normal appearance
             player.playerListName(Component.text(player.getName()).color(NamedTextColor.WHITE));
