@@ -17,6 +17,9 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.title.Title;
+import net.luckperms.api.LuckPerms;
+import net.luckperms.api.model.user.User;
+import net.luckperms.api.node.Node;
 import org.bukkit.*;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.*;
@@ -40,6 +43,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static dev.tserato.PvPSystem.MMR.MMR.getRankForMMR;
 
@@ -53,6 +57,8 @@ public class PvPSystem extends JavaPlugin implements Listener {
     private PAPIExpansion papiExpansion;
     private MatchManager matchManager;
     private GUIManager guiManager;
+
+    private final LuckPerms luckPerms = Bukkit.getServicesManager().getRegistration(LuckPerms.class).getProvider();
 
     @Override
     public void onEnable() {
@@ -87,6 +93,7 @@ public class PvPSystem extends JavaPlugin implements Listener {
 
         papiExpansion.register();
 
+        assignRankPrefixes();
 
         @NotNull LifecycleEventManager<Plugin> manager = this.getLifecycleManager();
         manager.registerEventHandler(LifecycleEvents.COMMANDS, event -> {
@@ -242,6 +249,87 @@ public class PvPSystem extends JavaPlugin implements Listener {
         }
     }
 
+    public void assignRankPrefixes() {
+        // Get all players' UUIDs and MMRs
+        Map<UUID, Integer> playerMMRMap = new HashMap<>();
+        for (OfflinePlayer offlinePlayer : Bukkit.getOfflinePlayers()) {
+            UUID playerUUID = offlinePlayer.getUniqueId();
+            int mmr = Database.getMMR(playerUUID); // Get MMR from the database
+            playerMMRMap.put(playerUUID, mmr);
+        }
+
+        // Sort players by MMR in descending order
+        List<Map.Entry<UUID, Integer>> sortedPlayers = playerMMRMap.entrySet().stream()
+                .sorted((e1, e2) -> e2.getValue().compareTo(e1.getValue())) // Descending order
+                .toList();
+
+        // Get the total number of players
+        int totalPlayers = sortedPlayers.size();
+
+        // Calculate the top 1%, top 5%, and top 10% thresholds
+        int top1Index = 0;
+        int top5Percent = (int) (totalPlayers * 0.05);
+        int top10Percent = (int) (totalPlayers * 0.1);
+
+        // Loop through the sorted players and assign the appropriate group
+        for (int i = 0; i < totalPlayers; i++) {
+            UUID playerUUID = sortedPlayers.get(i).getKey();
+            int mmr = sortedPlayers.get(i).getValue();
+            OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(playerUUID);
+
+            // Get the player from UUID
+            if (offlinePlayer.isOnline()) {
+                Player player = offlinePlayer.getPlayer();
+                if (player != null) {
+                    // Assign the prefix based on rank
+                    if (i == top1Index) {
+                        assignPrefix(player, "Champion");
+                    } else if (i <= top5Percent) {
+                        assignPrefix(player, "Duelist");
+                    } else if (i <= top10Percent) {
+                        assignPrefix(player, "Gladiator");
+                    } else {
+                        // Remove rank if no longer in top 10%
+                        removeRankPrefix(player);
+                    }
+                }
+            }
+        }
+    }
+
+    // Helper method to assign the prefix to a player
+    private void assignPrefix(Player player, String rank) {
+        User user = luckPerms.getUserManager().getUser(player.getUniqueId());
+
+        if (user != null) {
+            // Remove old rank if exists
+            removeRankPrefix(player);
+
+            // Add the new rank
+            Node rankNode = Node.builder("group." + rank.toLowerCase()).build();
+            user.data().add(rankNode);
+
+            // Apply the changes
+            luckPerms.getUserManager().saveUser(user);
+        }
+    }
+
+    // Helper method to remove the old rank prefix
+    private void removeRankPrefix(Player player) {
+        User user = luckPerms.getUserManager().getUser(player.getUniqueId());
+
+        if (user != null) {
+            // Remove all rank groups (Champion, Duelist, Gladiator)
+            // Remove nodes that are related to the groups (e.g., group.champion, group.duelist, group.gladiator)
+            user.data().remove(Node.builder("group.champion").build());
+            user.data().remove(Node.builder("group.duelist").build());
+            user.data().remove(Node.builder("group.gladiator").build());
+
+            // Save the changes
+            luckPerms.getUserManager().saveUser(user);
+        }
+    }
+
     public void openTopMMRGUI(Player player) {
         // Fetch the top placeholders from the PAPIExpansion class
         Map<String, String> topMMRPlaceholders = papiExpansion.getTopMMRPlaceholders();
@@ -382,49 +470,120 @@ public class PvPSystem extends JavaPlugin implements Listener {
         String newLoserRank = getRankForMMR(newLoserMMR);
 
         // Get colors for the new ranks
-        NamedTextColor winnerColor = MMR.getColorForRank(newWinnerRank);
-        NamedTextColor loserColor = MMR.getColorForRank(newLoserRank);
+        NamedTextColor winnerOldColor = MMR.getColorForRank(oldWinnerRank);
+        NamedTextColor winnerNewColor = MMR.getColorForRank(newWinnerRank);
+        NamedTextColor loserOldColor = MMR.getColorForRank(oldLoserRank);
+        NamedTextColor loserNewColor = MMR.getColorForRank(newLoserRank);
 
         // Update MMR and ranks in the database
         Database.setMMR(winner.getUniqueId(), newWinnerMMR);
         Database.setMMR(loser.getUniqueId(), newLoserMMR);
 
         // Check if the winner or loser has ranked up or down
-        boolean winnerRankedUp = !oldWinnerRank.equals(newWinnerRank) && !oldWinnerRank.split(" ")[0].equals(newWinnerRank.split(" ")[0]);
-        boolean loserRankedDown = !oldLoserRank.equals(newLoserRank) && !oldLoserRank.split(" ")[0].equals(newLoserRank.split(" ")[0]);
+        boolean winnerRankedUp = !oldWinnerRank.equals(newWinnerRank);
+        boolean loserRankedDown = !oldLoserRank.equals(newLoserRank);
 
-        // Display rank change titles with conditional messages
+        // Display rank change titles with animations
         if (winnerRankedUp) {
-            winner.showTitle(
-                    Title.title(
-                            Component.text(newWinnerRank).color(winnerColor),
-                            Component.text("You ranked up!").color(NamedTextColor.GREEN)
-                    )
-            );
+            showRankChangeAnimation(winner, oldWinnerRank, newWinnerRank, winnerOldColor, winnerNewColor, true);
         } else {
             winner.showTitle(
                     Title.title(
-                            Component.text(MMR.rankChangeTitle(oldWinnerRank, newWinnerRank)).color(winnerColor),
+                            Component.text(oldWinnerRank).color(winnerOldColor),
                             Component.text("You won.").color(NamedTextColor.GREEN)
                     )
             );
         }
 
         if (loserRankedDown) {
-            loser.showTitle(
-                    Title.title(
-                            Component.text(newLoserRank).color(loserColor),
-                            Component.text("You ranked down!").color(NamedTextColor.RED)
-                    )
-            );
+            showRankChangeAnimation(loser, oldLoserRank, newLoserRank, loserOldColor, loserNewColor, false);
         } else {
             loser.showTitle(
                     Title.title(
-                            Component.text(MMR.rankChangeTitle(oldLoserRank, newLoserRank)).color(loserColor),
+                            Component.text(oldLoserRank).color(loserOldColor),
                             Component.text("You lost.").color(NamedTextColor.RED)
                     )
             );
         }
+    }
+
+    /**
+     * Shows a rank change animation with color transition and final title change.
+     *
+     * @param player       The player to show the animation to.
+     * @param oldRank      The old rank of the player.
+     * @param newRank      The new rank of the player.
+     * @param oldColor     The initial color of the rank.
+     * @param newColor     The final color of the rank.
+     * @param rankedUp     Whether the player ranked up or down.
+     */
+    private void showRankChangeAnimation(Player player, String oldRank, String newRank, NamedTextColor oldColor, NamedTextColor newColor, boolean rankedUp) {
+        final int animationSteps = 3;
+        final long animationDelay = 20L; // 1 second in ticks
+
+        // Calculate intermediate colors for the gradient
+        List<NamedTextColor> colorGradient = createColorGradient(oldColor, newColor, animationSteps);
+
+        // Use AtomicInteger to store task ID, which can be modified later
+        AtomicInteger taskId = new AtomicInteger();
+
+        // Schedule the animation
+        taskId.set(Bukkit.getScheduler().runTaskTimer(this, new Runnable() {
+            int step = 0;
+
+            @Override
+            public void run() {
+                if (step < colorGradient.size()) {
+                    // Show intermediate title with transitioning colors
+                    player.showTitle(
+                            Title.title(
+                                    Component.text(oldRank).color(colorGradient.get(step)),
+                                    Component.text(rankedUp ? "You won." : "You lost.").color(rankedUp ? NamedTextColor.GREEN : NamedTextColor.RED)
+                            )
+                    );
+                    player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
+                    step++;
+                } else {
+                    // End of animation, show the new rank title
+                    player.showTitle(
+                            Title.title(
+                                    Component.text(newRank).color(newColor),
+                                    Component.text(rankedUp ? "Rank up!" : "Rank down!").color(rankedUp ? NamedTextColor.GOLD : NamedTextColor.RED)
+                            )
+                    );
+                    player.playSound(player.getLocation(), Sound.ENTITY_BREEZE_WIND_BURST, 1.0f, 1.0f);
+                    Bukkit.getScheduler().cancelTask(taskId.get());
+                }
+            }
+        }, 0L, animationDelay).getTaskId());
+    }
+
+    /**
+     * Creates a gradient of colors between two NamedTextColors.
+     *
+     * @param startColor The starting color of the gradient.
+     * @param endColor   The ending color of the gradient.
+     * @param steps      The number of steps in the gradient.
+     * @return A list of NamedTextColors representing the gradient.
+     */
+    private List<NamedTextColor> createColorGradient(NamedTextColor startColor, NamedTextColor endColor, int steps) {
+        List<NamedTextColor> gradient = new ArrayList<>();
+        int startRed = startColor.red();
+        int startGreen = startColor.red();
+        int startBlue = startColor.red();
+
+        int endRed = endColor.red();
+        int endGreen = endColor.green();
+        int endBlue = endColor.blue();
+
+        for (int i = 0; i <= steps; i++) {
+            double ratio = (double) i / steps;
+            int red = (int) (startRed + (endRed - startRed) * ratio);
+            int green = (int) (startGreen + (endGreen - startGreen) * ratio);
+            int blue = (int) (startBlue + (endBlue - startBlue) * ratio);
+            gradient.add(NamedTextColor.namedColor(red << 16 | green << 8 | blue));
+        }
+        return gradient;
     }
 
     public World createArenaWorld(String arenaName) {
@@ -600,6 +759,8 @@ public class PvPSystem extends JavaPlugin implements Listener {
 
         updateTabAppearance(player, false);
 
+        assignRankPrefixes();
+
         // If player was in an arena, handle match logic
         World arenaWorld = playerArenaMap.get(player.getUniqueId());
         if (arenaWorld != null && arenaWorld.getName().startsWith("arena_")) {
@@ -755,6 +916,8 @@ public class PvPSystem extends JavaPlugin implements Listener {
                 clearAllPotionEffects(player);
 
                 clearEntitiesExceptPlayers(arenaWorld);
+
+                assignRankPrefixes();
 
                 Location loc1 = new Location(arenaWorld, 0, -60, 10, 180, 0);
                 Location loc2 = new Location(arenaWorld, 0, -60, -10);

@@ -17,7 +17,8 @@ public class Database {
                         + "mmr INTEGER NOT NULL DEFAULT 300, "
                         + "wins INTEGER NOT NULL DEFAULT 0, "
                         + "losses INTEGER NOT NULL DEFAULT 0, "
-                        + "total_games INTEGER NOT NULL DEFAULT 0)";
+                        + "total_games INTEGER NOT NULL DEFAULT 0, "
+                        + "title TEXT NOT NULL DEFAULT 'None')";
                 try (Statement stmt = conn.createStatement()) {
                     stmt.execute(createPlayersTable);
                     Bukkit.getLogger().info("PvPSystem database setup successfully.");
