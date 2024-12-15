@@ -17,9 +17,6 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.title.Title;
-import net.luckperms.api.LuckPerms;
-import net.luckperms.api.model.user.User;
-import net.luckperms.api.node.Node;
 import org.bukkit.*;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.*;
@@ -57,8 +54,6 @@ public class PvPSystem extends JavaPlugin implements Listener {
     private PAPIExpansion papiExpansion;
     private MatchManager matchManager;
     private GUIManager guiManager;
-
-    private final LuckPerms luckPerms = Bukkit.getServicesManager().getRegistration(LuckPerms.class).getProvider();
 
     @Override
     public void onEnable() {
@@ -283,51 +278,32 @@ public class PvPSystem extends JavaPlugin implements Listener {
                 if (player != null) {
                     // Assign the prefix based on rank
                     if (i == top1Index) {
-                        assignPrefix(player, "Champion");
+                        assignRankGroup(player, "Champion");
                     } else if (i <= top5Percent) {
-                        assignPrefix(player, "Duelist");
+                        assignRankGroup(player, "Duelist");
                     } else if (i <= top10Percent) {
-                        assignPrefix(player, "Gladiator");
+                        assignRankGroup(player, "Gladiator");
                     } else {
                         // Remove rank if no longer in top 10%
-                        removeRankPrefix(player);
+                        removeRankGroup(player);
                     }
                 }
             }
         }
     }
 
-    // Helper method to assign the prefix to a player
-    private void assignPrefix(Player player, String rank) {
-        User user = luckPerms.getUserManager().getUser(player.getUniqueId());
-
-        if (user != null) {
-            // Remove old rank if exists
-            removeRankPrefix(player);
-
-            // Add the new rank
-            Node rankNode = Node.builder("group." + rank.toLowerCase()).build();
-            user.data().add(rankNode);
-
-            // Apply the changes
-            luckPerms.getUserManager().saveUser(user);
-        }
+    // Helper method to assign the group to a player
+    private void assignRankGroup(Player player, String group) {
+        // Build and execute the command
+        String command = String.format("lp user %s parent set %s", player.getName(), group.toLowerCase());
+        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command);
     }
 
-    // Helper method to remove the old rank prefix
-    private void removeRankPrefix(Player player) {
-        User user = luckPerms.getUserManager().getUser(player.getUniqueId());
-
-        if (user != null) {
-            // Remove all rank groups (Champion, Duelist, Gladiator)
-            // Remove nodes that are related to the groups (e.g., group.champion, group.duelist, group.gladiator)
-            user.data().remove(Node.builder("group.champion").build());
-            user.data().remove(Node.builder("group.duelist").build());
-            user.data().remove(Node.builder("group.gladiator").build());
-
-            // Save the changes
-            luckPerms.getUserManager().saveUser(user);
-        }
+    // Helper method to remove the player's rank
+    private void removeRankGroup(Player player) {
+        // Reset the player's parent group to default (or remove specific groups)
+        String command = String.format("lp user %s parent set default", player.getName());
+        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command);
     }
 
     public void openTopMMRGUI(Player player) {

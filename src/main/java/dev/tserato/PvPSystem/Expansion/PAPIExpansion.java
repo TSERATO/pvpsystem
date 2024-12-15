@@ -46,12 +46,82 @@ public class PAPIExpansion extends PlaceholderExpansion {
         // Update top players dynamically whenever a placeholder is requested
         Map<String, String> topPlaceholders = getTopMMRPlaceholders();
 
-        // Return the appropriate placeholder value
         if (params.startsWith("top_")) {
             return topPlaceholders.getOrDefault(params, "N/A");
         }
 
+        // New placeholders for position and percentage
+        if (params.equalsIgnoreCase("position")) {
+            return getPlayerPosition(player.getUniqueId());
+        }
+
+        if (params.equalsIgnoreCase("position_in_percent")) {
+            return getPlayerPositionInPercent(player.getUniqueId());
+        }
+
         return null;
+    }
+
+    /**
+     * Returns the player's position among all players by MMR.
+     *
+     * @param playerUUID The UUID of the player.
+     * @return The player's position as a string.
+     */
+    private String getPlayerPosition(UUID playerUUID) {
+        Map<UUID, Integer> playerMMRMap = new HashMap<>();
+        for (OfflinePlayer offlinePlayer : Bukkit.getOfflinePlayers()) {
+            UUID uuid = offlinePlayer.getUniqueId();
+            int mmr = Database.getMMR(uuid); // Replace with your actual method to get MMR
+            playerMMRMap.put(uuid, mmr);
+        }
+
+        // Sort players by MMR in descending order
+        List<Map.Entry<UUID, Integer>> sortedPlayers = playerMMRMap.entrySet().stream()
+                .sorted((e1, e2) -> e2.getValue().compareTo(e1.getValue())) // Descending order
+                .toList();
+
+        // Find the position of the player
+        for (int i = 0; i < sortedPlayers.size(); i++) {
+            if (sortedPlayers.get(i).getKey().equals(playerUUID)) {
+                return String.valueOf(i + 1); // Position is index + 1
+            }
+        }
+
+        return "N/A"; // If player is not found
+    }
+
+    /**
+     * Returns the percentage of players on the same rank as the given player by MMR.
+     *
+     * @param playerUUID The UUID of the player.
+     * @return The percentage of players on the same rank as a string.
+     */
+    private String getPlayerPositionInPercent(UUID playerUUID) {
+        Map<UUID, Integer> playerMMRMap = new HashMap<>();
+        for (OfflinePlayer offlinePlayer : Bukkit.getOfflinePlayers()) {
+            UUID uuid = offlinePlayer.getUniqueId();
+            int mmr = Database.getMMR(uuid); // Replace with your actual method to get MMR
+            playerMMRMap.put(uuid, mmr);
+        }
+
+        // Get the MMR of the requesting player
+        Integer playerMMR = playerMMRMap.get(playerUUID);
+        if (playerMMR == null) {
+            return "N/A"; // Player not found in the database
+        }
+
+        // Count the total number of players and players with the same MMR
+        int totalPlayers = playerMMRMap.size();
+        long sameRankCount = playerMMRMap.values().stream()
+                .filter(mmr -> mmr.equals(playerMMR))
+                .count();
+
+        // Calculate the percentage of players with the same rank
+        double percentage = ((double) sameRankCount / totalPlayers) * 100;
+
+        // Format the percentage to two decimal places
+        return String.format("%.2f%%", percentage);
     }
 
     public Map<String, String> getTopMMRPlaceholders() {
