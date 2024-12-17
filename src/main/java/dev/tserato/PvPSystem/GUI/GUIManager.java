@@ -37,7 +37,14 @@ public class GUIManager implements Listener {
      */
     public void openMatchGUI(Player player) {
         List<Match> matches = matchManager.getActiveMatches();
-        int size = ((matches.size() + 8) / 9) * 9; // Ensure rows of 9 slots
+
+        // Check if there are no active matches
+        if (matches.isEmpty()) {
+            player.sendMessage(Component.text("There are no active matches at the moment.").color(NamedTextColor.RED));
+            return; // Stop further execution
+        }
+
+        int size = ((matches.size() + 8) / 9) * 9; // Calculate the inventory size
         Inventory gui = Bukkit.createInventory(null, size, ChatColor.GREEN + "Active Matches");
 
         for (int i = 0; i < matches.size(); i++) {

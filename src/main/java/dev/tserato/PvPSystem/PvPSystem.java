@@ -13,6 +13,7 @@ import io.papermc.paper.command.brigadier.argument.ArgumentTypes;
 import io.papermc.paper.command.brigadier.argument.resolvers.selector.PlayerSelectorArgumentResolver;
 import io.papermc.paper.plugin.lifecycle.event.LifecycleEventManager;
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
+import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
@@ -34,12 +35,14 @@ import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.scheduler.BukkitTask;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static dev.tserato.PvPSystem.MMR.MMR.getRankForMMR;
@@ -51,6 +54,7 @@ public class PvPSystem extends JavaPlugin implements Listener {
     private final Map<UUID, Long> winnerTimeMap = new HashMap<>(); // Tracks winner's time remaining
     private final PlayerQueue queue = new PlayerQueue();
     private final Map<UUID, Boolean> spectatingPlayers = new HashMap<>();
+    private final Map<UUID, BossBar> activeBossBars = new HashMap<>();
     private PAPIExpansion papiExpansion;
     private MatchManager matchManager;
     private GUIManager guiManager;
@@ -176,6 +180,44 @@ public class PvPSystem extends JavaPlugin implements Listener {
                     List.of("")
             );
             commands.register(
+                    Commands.literal("wins")
+                            .executes(ctx -> {
+                                CommandSender sender = ctx.getSource().getSender();
+                                if (!(sender instanceof Player player)) {
+                                    sender.sendMessage(Component.text("This command can only be used by players.").color(NamedTextColor.RED));
+                                    return Command.SINGLE_SUCCESS;
+                                }
+                                if (Database.getWins(player.getUniqueId()) == 1) {
+                                    player.sendMessage(Component.text("You have " + Database.getWins(player.getUniqueId()) + " Win").color(NamedTextColor.GREEN));
+                                } else {
+                                    player.sendMessage(Component.text("You have " + Database.getWins(player.getUniqueId()) + " Wins").color(NamedTextColor.GREEN));
+                                }
+                                return Command.SINGLE_SUCCESS;
+                            })
+                            .build(),
+                    "Returns wins of a player",
+                    List.of("")
+            );
+            commands.register(
+                    Commands.literal("losses")
+                            .executes(ctx -> {
+                                CommandSender sender = ctx.getSource().getSender();
+                                if (!(sender instanceof Player player)) {
+                                    sender.sendMessage(Component.text("This command can only be used by players.").color(NamedTextColor.RED));
+                                    return Command.SINGLE_SUCCESS;
+                                }
+                                if (Database.getLosses(player.getUniqueId()) == 1) {
+                                    player.sendMessage(Component.text("You have " + Database.getLosses(player.getUniqueId()) + " Loss").color(NamedTextColor.GREEN));
+                                } else {
+                                    player.sendMessage(Component.text("You have " + Database.getLosses(player.getUniqueId()) + " Losses").color(NamedTextColor.GREEN));
+                                }
+                                return Command.SINGLE_SUCCESS;
+                            })
+                            .build(),
+                    "Returns losses of a player",
+                    List.of("")
+            );
+            commands.register(
                     Commands.literal("mmr")
                             .then(
                                     Commands.argument("player", ArgumentTypes.player())
@@ -209,37 +251,70 @@ public class PvPSystem extends JavaPlugin implements Listener {
         queue.addPlayer(player, playerMMR);
         player.sendMessage(Component.text("Looking for a ranked match...").color(NamedTextColor.YELLOW));
 
-        // Attempt to find a match
-        List<UUID> matchedPlayers = queue.findMatch();
-        if (matchedPlayers.size() == 2) {
-            Player player1 = Bukkit.getPlayer(matchedPlayers.get(0));
-            Player player2 = Bukkit.getPlayer(matchedPlayers.get(1));
-
-            if (player1 != null && player2 != null) {
-                String arenaName = "arena_" + UUID.randomUUID().toString().substring(0, 8);
-                World arenaWorld = createArenaWorld(arenaName);
-
-                if (arenaWorld != null) {
-                    player1.sendMessage(Component.text("You have been matched! Teleporting to arena...").color(NamedTextColor.GREEN));
-                    player2.sendMessage(Component.text("You have been matched! Teleporting to arena...").color(NamedTextColor.GREEN));
-
-                    Location loc1 = new Location(arenaWorld, 0, -60, 10, 180, 0);
-                    Location loc2 = new Location(arenaWorld, 0, -60, -10);
-                    teleportWithCountdown(player1, loc1);
-                    teleportWithCountdown(player2, loc2);
-
-                    playerArenaMap.put(player1.getUniqueId(), arenaWorld);
-                    playerArenaMap.put(player2.getUniqueId(), arenaWorld);
-
-                    // Add the match to the MatchManager
-                    Match match = new Match(player1, player2, arenaWorld);
-                    matchManager.addMatch(match); // Add match to MatchManager
-                } else {
-                    player1.sendMessage(Component.text("Failed to create arena. Please contact the server admins.").color(NamedTextColor.RED));
-                    player2.sendMessage(Component.text("Failed to create arena. Please contact the server admins.").color(NamedTextColor.RED));
-                }
-            }
+        // Remove any existing boss bar for this player
+        if (activeBossBars.containsKey(playerUUID)) {
+            BossBar existingBossBar = activeBossBars.get(playerUUID);
+            player.hideBossBar(existingBossBar);
+            activeBossBars.remove(playerUUID);
         }
+
+        // Create and display a new boss bar
+        BossBar bossBar = BossBar.bossBar(
+                Component.text("Queueing for a match...").color(NamedTextColor.YELLOW),
+                1.0f,  // Full progress bar
+                BossBar.Color.GREEN,
+                BossBar.Overlay.PROGRESS
+        );
+
+        player.showBossBar(bossBar);
+        activeBossBars.put(playerUUID, bossBar);
+
+        // Attempt to find a match
+        Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
+            List<UUID> matchedPlayers = queue.findMatch();
+            if (matchedPlayers.size() == 2) {
+                Bukkit.getScheduler().runTask(this, () -> {
+                    // Match found, remove the player from queue and stop the boss bar
+                    queue.removePlayer(player);
+                    player.hideBossBar(bossBar);
+                    activeBossBars.remove(playerUUID);
+
+                    Player player1 = Bukkit.getPlayer(matchedPlayers.get(0));
+                    Player player2 = Bukkit.getPlayer(matchedPlayers.get(1));
+
+                    if (player1 != null && player2 != null) {
+                        String arenaName = "arena_" + UUID.randomUUID().toString().substring(0, 8);
+                        World arenaWorld = createArenaWorld(arenaName);
+
+                        if (arenaWorld != null) {
+                            player1.sendMessage(Component.text("You have been matched! Teleporting to arena...").color(NamedTextColor.GREEN));
+                            player2.sendMessage(Component.text("You have been matched! Teleporting to arena...").color(NamedTextColor.GREEN));
+
+                            Location loc1 = new Location(arenaWorld, 0, -60, 10, 180, 0);
+                            Location loc2 = new Location(arenaWorld, 0, -60, -10);
+                            teleportWithCountdown(player1, loc1);
+                            teleportWithCountdown(player2, loc2);
+
+                            playerArenaMap.put(player1.getUniqueId(), arenaWorld);
+                            playerArenaMap.put(player2.getUniqueId(), arenaWorld);
+
+                            // Add the match to the MatchManager
+                            Match match = new Match(player1, player2, arenaWorld);
+                            matchManager.addMatch(match); // Add match to MatchManager
+
+                            if (activeBossBars.containsKey(playerUUID)) {
+                                BossBar existingBossBar = activeBossBars.get(playerUUID);
+                                player.hideBossBar(existingBossBar);
+                                activeBossBars.remove(playerUUID);
+                            }
+                        } else {
+                            player1.sendMessage(Component.text("Failed to create arena. Please contact the server admins.").color(NamedTextColor.RED));
+                            player2.sendMessage(Component.text("Failed to create arena. Please contact the server admins.").color(NamedTextColor.RED));
+                        }
+                    }
+                });
+            }
+        });
     }
 
     public void openTopMMRGUI(Player player) {
@@ -364,6 +439,11 @@ public class PvPSystem extends JavaPlugin implements Listener {
 
     public void delFromQueue(Player player) {
         queue.removePlayer(player);
+        if (activeBossBars.containsKey(player.getUniqueId())) {
+            BossBar existingBossBar = activeBossBars.get(player.getUniqueId());
+            player.hideBossBar(existingBossBar);
+            activeBossBars.remove(player.getUniqueId());
+        }
         player.sendMessage(Component.text("You have left the ranked queue.").color(NamedTextColor.YELLOW));
     }
 
@@ -390,9 +470,6 @@ public class PvPSystem extends JavaPlugin implements Listener {
         // Update MMR and ranks in the database
         Database.setMMR(winner.getUniqueId(), newWinnerMMR);
         Database.setMMR(loser.getUniqueId(), newLoserMMR);
-
-        Database.incrementWins(winner.getUniqueId());
-        Database.incrementLosses(loser.getUniqueId());
 
         // Check if the winner or loser has ranked up or down
         boolean winnerRankedUp = !oldWinnerRank.equals(newWinnerRank);
@@ -564,6 +641,12 @@ public class PvPSystem extends JavaPlugin implements Listener {
 
         updateTabAppearance(player, true);
 
+        if (activeBossBars.containsKey(player.getUniqueId())) {
+            BossBar existingBossBar = activeBossBars.get(player.getUniqueId());
+            player.hideBossBar(existingBossBar);
+            activeBossBars.remove(player.getUniqueId());
+        }
+
         new BukkitRunnable() {
             int countdown = 10;
 
@@ -580,6 +663,11 @@ public class PvPSystem extends JavaPlugin implements Listener {
                         player.showTitle(Title.title(Component.text(countdown).color(NamedTextColor.AQUA), Component.text("")));
                     }
                     player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
+                    if (activeBossBars.containsKey(player.getUniqueId())) {
+                        BossBar existingBossBar = activeBossBars.get(player.getUniqueId());
+                        player.hideBossBar(existingBossBar);
+                        activeBossBars.remove(player.getUniqueId());
+                    }
                     countdown--;
                 } else {
                     player.showTitle(Title.title(Component.text("Fight!").color(NamedTextColor.DARK_PURPLE).decorate(TextDecoration.BOLD), Component.text("")));
