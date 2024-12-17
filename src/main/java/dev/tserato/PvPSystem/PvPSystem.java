@@ -88,8 +88,6 @@ public class PvPSystem extends JavaPlugin implements Listener {
 
         papiExpansion.register();
 
-        assignRankPrefixes();
-
         @NotNull LifecycleEventManager<Plugin> manager = this.getLifecycleManager();
         manager.registerEventHandler(LifecycleEvents.COMMANDS, event -> {
             final Commands commands = event.registrar();
@@ -244,68 +242,6 @@ public class PvPSystem extends JavaPlugin implements Listener {
         }
     }
 
-    public void assignRankPrefixes() {
-        // Get all players' UUIDs and MMRs
-        Map<UUID, Integer> playerMMRMap = new HashMap<>();
-        for (OfflinePlayer offlinePlayer : Bukkit.getOfflinePlayers()) {
-            UUID playerUUID = offlinePlayer.getUniqueId();
-            int mmr = Database.getMMR(playerUUID); // Get MMR from the database
-            playerMMRMap.put(playerUUID, mmr);
-        }
-
-        // Sort players by MMR in descending order
-        List<Map.Entry<UUID, Integer>> sortedPlayers = playerMMRMap.entrySet().stream()
-                .sorted((e1, e2) -> e2.getValue().compareTo(e1.getValue())) // Descending order
-                .toList();
-
-        // Get the total number of players
-        int totalPlayers = sortedPlayers.size();
-
-        // Calculate the top 1%, top 5%, and top 10% thresholds
-        int top1Index = 0;
-        int top5Percent = (int) (totalPlayers * 0.05);
-        int top10Percent = (int) (totalPlayers * 0.1);
-
-        // Loop through the sorted players and assign the appropriate group
-        for (int i = 0; i < totalPlayers; i++) {
-            UUID playerUUID = sortedPlayers.get(i).getKey();
-            int mmr = sortedPlayers.get(i).getValue();
-            OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(playerUUID);
-
-            // Get the player from UUID
-            if (offlinePlayer.isOnline()) {
-                Player player = offlinePlayer.getPlayer();
-                if (player != null) {
-                    // Assign the prefix based on rank
-                    if (i == top1Index) {
-                        assignRankGroup(player, "Champion");
-                    } else if (i <= top5Percent) {
-                        assignRankGroup(player, "Duelist");
-                    } else if (i <= top10Percent) {
-                        assignRankGroup(player, "Gladiator");
-                    } else {
-                        // Remove rank if no longer in top 10%
-                        removeRankGroup(player);
-                    }
-                }
-            }
-        }
-    }
-
-    // Helper method to assign the group to a player
-    private void assignRankGroup(Player player, String group) {
-        // Build and execute the command
-        String command = String.format("lp user %s parent set %s", player.getName(), group.toLowerCase());
-        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command);
-    }
-
-    // Helper method to remove the player's rank
-    private void removeRankGroup(Player player) {
-        // Reset the player's parent group to default (or remove specific groups)
-        String command = String.format("lp user %s parent set default", player.getName());
-        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command);
-    }
-
     public void openTopMMRGUI(Player player) {
         // Fetch the top placeholders from the PAPIExpansion class
         Map<String, String> topMMRPlaceholders = papiExpansion.getTopMMRPlaceholders();
@@ -454,6 +390,9 @@ public class PvPSystem extends JavaPlugin implements Listener {
         // Update MMR and ranks in the database
         Database.setMMR(winner.getUniqueId(), newWinnerMMR);
         Database.setMMR(loser.getUniqueId(), newLoserMMR);
+
+        Database.incrementWins(winner.getUniqueId());
+        Database.incrementLosses(loser.getUniqueId());
 
         // Check if the winner or loser has ranked up or down
         boolean winnerRankedUp = !oldWinnerRank.equals(newWinnerRank);
@@ -735,11 +674,9 @@ public class PvPSystem extends JavaPlugin implements Listener {
 
         updateTabAppearance(player, false);
 
-        assignRankPrefixes();
-
         // If player was in an arena, handle match logic
         World arenaWorld = playerArenaMap.get(player.getUniqueId());
-        if (arenaWorld != null && arenaWorld.getName().startsWith("arena_")) {
+        if (arenaWorld != null && arenaWorld.getName().startsWith("arena_") && !spectatingPlayers.getOrDefault(player.getUniqueId(), false)) {
             // Determine the remaining player in the arena
             Player winner = null;
             for (Player p : arenaWorld.getPlayers()) {
@@ -893,8 +830,6 @@ public class PvPSystem extends JavaPlugin implements Listener {
 
                 clearEntitiesExceptPlayers(arenaWorld);
 
-                assignRankPrefixes();
-
                 Location loc1 = new Location(arenaWorld, 0, -60, 10, 180, 0);
                 Location loc2 = new Location(arenaWorld, 0, -60, -10);
                 player.teleport(loc1);
@@ -926,7 +861,6 @@ public class PvPSystem extends JavaPlugin implements Listener {
                 matchManager.getActiveMatches().stream()
                         .filter(match -> match.getArenaWorld().equals(arenaWorld))
                         .findFirst().ifPresent(matchToRemove -> matchManager.removeMatch(matchToRemove));
-
             }
         }
     }

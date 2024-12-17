@@ -11,7 +11,6 @@ public class Database {
     public static void setupDatabase() {
         try (Connection conn = DriverManager.getConnection(DATABASE_URL)) {
             if (conn != null) {
-                // Create or update the players table to include win/loss stats
                 String createPlayersTable = "CREATE TABLE IF NOT EXISTS players ("
                         + "uuid TEXT PRIMARY KEY, "
                         + "mmr INTEGER NOT NULL DEFAULT 300, "
@@ -29,6 +28,116 @@ public class Database {
         }
     }
 
+    private static void insertDefaultPlayer(UUID playerUUID) {
+        try (Connection conn = DriverManager.getConnection(DATABASE_URL);
+             PreparedStatement stmt = conn.prepareStatement(
+                     "INSERT OR IGNORE INTO players (uuid, mmr, wins, losses, total_games, title) VALUES (?, 300, 0, 0, 0, 'None')"
+             )) {
+            stmt.setString(1, playerUUID.toString());
+            int rowsInserted = stmt.executeUpdate();
+            Bukkit.getLogger().info("Default player inserted: " + rowsInserted + " row(s) for UUID: " + playerUUID);
+        } catch (SQLException e) {
+            Bukkit.getLogger().severe("Error inserting default player: " + e.getMessage());
+        }
+    }
+
+    public static void incrementWins(UUID playerUUID) {
+        try (Connection conn = DriverManager.getConnection(DATABASE_URL)) {
+            Bukkit.getLogger().info("Attempting to increment wins for player: " + playerUUID);
+
+            // Fetch the current wins and total games
+            int currentWins = getWins(playerUUID);
+            int currentTotalGames = getTotalGames(playerUUID);
+
+            Bukkit.getLogger().info("Current stats - Wins: " + currentWins + ", Total Games: " + currentTotalGames);
+
+            // Increment the values
+            int newWins = currentWins + 1;
+            int newTotalGames = currentTotalGames + 1;
+
+            Bukkit.getLogger().info("New stats - Wins: " + newWins + ", Total Games: " + newTotalGames);
+
+            // Update the database
+            try (PreparedStatement stmt = conn.prepareStatement(
+                    "UPDATE players SET wins = ?, total_games = ? WHERE uuid = ?"
+            )) {
+                stmt.setInt(1, newWins);
+                stmt.setInt(2, newTotalGames);
+                stmt.setString(3, playerUUID.toString());
+
+                int rowsUpdated = stmt.executeUpdate();
+                Bukkit.getLogger().info("Rows updated: " + rowsUpdated);
+
+                if (rowsUpdated == 0) {
+                    Bukkit.getLogger().warning("No rows were updated. Player record may not exist. Attempting to insert default player.");
+                    insertDefaultPlayer(playerUUID);
+                    incrementWins(playerUUID); // Retry the increment
+                } else {
+                    Bukkit.getLogger().info("Wins incremented successfully for player: " + playerUUID);
+                }
+            }
+        } catch (SQLException e) {
+            Bukkit.getLogger().severe("Error incrementing wins for player " + playerUUID + ": " + e.getMessage());
+        }
+    }
+
+    public static void incrementLosses(UUID playerUUID) {
+        try (Connection conn = DriverManager.getConnection(DATABASE_URL)) {
+            Bukkit.getLogger().info("Attempting to increment losses for player: " + playerUUID);
+
+            // Fetch the current losses and total games
+            int currentLosses = getLosses(playerUUID);
+            int currentTotalGames = getTotalGames(playerUUID);
+
+            Bukkit.getLogger().info("Current stats - Losses: " + currentLosses + ", Total Games: " + currentTotalGames);
+
+            // Increment the values
+            int newLosses = currentLosses + 1;
+            int newTotalGames = currentTotalGames + 1;
+
+            Bukkit.getLogger().info("New stats - Losses: " + newLosses + ", Total Games: " + newTotalGames);
+
+            // Update the database
+            try (PreparedStatement stmt = conn.prepareStatement(
+                    "UPDATE players SET losses = ?, total_games = ? WHERE uuid = ?"
+            )) {
+                stmt.setInt(1, newLosses);
+                stmt.setInt(2, newTotalGames);
+                stmt.setString(3, playerUUID.toString());
+
+                int rowsUpdated = stmt.executeUpdate();
+                Bukkit.getLogger().info("Rows updated: " + rowsUpdated);
+
+                if (rowsUpdated == 0) {
+                    Bukkit.getLogger().warning("No rows were updated. Player record may not exist. Attempting to insert default player.");
+                    insertDefaultPlayer(playerUUID);
+                    incrementLosses(playerUUID); // Retry the increment
+                } else {
+                    Bukkit.getLogger().info("Losses incremented successfully for player: " + playerUUID);
+                }
+            }
+        } catch (SQLException e) {
+            Bukkit.getLogger().severe("Error incrementing losses for player " + playerUUID + ": " + e.getMessage());
+        }
+    }
+
+    public static void setTitle(UUID playerUUID, String title) {
+        try (Connection conn = DriverManager.getConnection(DATABASE_URL);
+             PreparedStatement stmt = conn.prepareStatement("UPDATE players SET title = ? WHERE uuid = ?")) {
+            stmt.setString(1, title);
+            stmt.setString(2, playerUUID.toString());
+            int updatedRows = stmt.executeUpdate();
+            if (updatedRows == 0) {
+                // If no rows were updated, the player doesn't exist, so we create a default record and retry
+                insertDefaultPlayer(playerUUID);
+                setTitle(playerUUID, title); // Retry setting the title
+            }
+        } catch (SQLException e) {
+            Bukkit.getLogger().severe("Error setting title: " + e.getMessage());
+        }
+    }
+
+        // Existing methods remain unchanged
     public static int getMMR(UUID playerUUID) {
         try (Connection conn = DriverManager.getConnection(DATABASE_URL);
              PreparedStatement stmt = conn.prepareStatement("SELECT mmr FROM players WHERE uuid = ?")) {
@@ -37,14 +146,13 @@ public class Database {
             if (rs.next()) {
                 return rs.getInt("mmr");
             } else {
-                // Player doesn't have an MMR record, so we assign the default value
-                setMMR(playerUUID, 300); // Default MMR
-                return 300; // Return default MMR
+                setMMR(playerUUID, 300);
+                return 300;
             }
         } catch (SQLException e) {
             Bukkit.getLogger().severe("Error fetching MMR: " + e.getMessage());
         }
-        return 300; // Default MMR
+        return 300;
     }
 
     public static void setMMR(UUID playerUUID, int mmr) {
@@ -58,37 +166,6 @@ public class Database {
         }
     }
 
-    public static void updatePlayerStats(UUID playerUUID, int wins, int losses, int totalGames) {
-        try (Connection conn = DriverManager.getConnection(DATABASE_URL);
-             PreparedStatement stmt = conn.prepareStatement("REPLACE INTO players (uuid, wins, losses, total_games) VALUES (?, ?, ?, ?)")) {
-            stmt.setString(1, playerUUID.toString());
-            stmt.setInt(2, wins);
-            stmt.setInt(3, losses);
-            stmt.setInt(4, totalGames);
-            stmt.executeUpdate();
-        } catch (SQLException e) {
-            Bukkit.getLogger().severe("Error updating player stats: " + e.getMessage());
-        }
-    }
-
-    public static String getPlayerStats(UUID playerUUID) {
-        try (Connection conn = DriverManager.getConnection(DATABASE_URL);
-             PreparedStatement stmt = conn.prepareStatement("SELECT wins, losses, total_games FROM players WHERE uuid = ?")) {
-            stmt.setString(1, playerUUID.toString());
-            ResultSet rs = stmt.executeQuery();
-            if (rs.next()) {
-                int wins = rs.getInt("wins");
-                int losses = rs.getInt("losses");
-                int totalGames = rs.getInt("total_games");
-                return "Wins: " + wins + "\nLosses: " + losses + "\nTotal Games: " + totalGames;
-            }
-        } catch (SQLException e) {
-            Bukkit.getLogger().severe("Error fetching player stats: " + e.getMessage());
-        }
-        return "No stats available.";
-    }
-
-    // Method to get the number of wins for a player
     public static int getWins(UUID playerUUID) {
         try (Connection conn = DriverManager.getConnection(DATABASE_URL);
              PreparedStatement stmt = conn.prepareStatement("SELECT wins FROM players WHERE uuid = ?")) {
@@ -96,14 +173,17 @@ public class Database {
             ResultSet rs = stmt.executeQuery();
             if (rs.next()) {
                 return rs.getInt("wins");
+            } else {
+                // Insert default only if the record truly does not exist
+                insertDefaultPlayer(playerUUID);
+                return 0;
             }
         } catch (SQLException e) {
             Bukkit.getLogger().severe("Error fetching wins: " + e.getMessage());
         }
-        return 0; // Return 0 if no data found
+        return 0; // Default value on error
     }
 
-    // Method to get the number of losses for a player
     public static int getLosses(UUID playerUUID) {
         try (Connection conn = DriverManager.getConnection(DATABASE_URL);
              PreparedStatement stmt = conn.prepareStatement("SELECT losses FROM players WHERE uuid = ?")) {
@@ -111,10 +191,32 @@ public class Database {
             ResultSet rs = stmt.executeQuery();
             if (rs.next()) {
                 return rs.getInt("losses");
+            } else {
+                // Insert default only if the record truly does not exist
+                insertDefaultPlayer(playerUUID);
+                return 0;
             }
         } catch (SQLException e) {
             Bukkit.getLogger().severe("Error fetching losses: " + e.getMessage());
         }
-        return 0; // Return 0 if no data found
+        return 0; // Default value on error
+    }
+
+    public static int getTotalGames(UUID playerUUID) {
+        try (Connection conn = DriverManager.getConnection(DATABASE_URL);
+             PreparedStatement stmt = conn.prepareStatement("SELECT total_games FROM players WHERE uuid = ?")) {
+            stmt.setString(1, playerUUID.toString());
+            ResultSet rs = stmt.executeQuery();
+            if (rs.next()) {
+                return rs.getInt("total_games");
+            } else {
+                // Insert default only if the record truly does not exist
+                insertDefaultPlayer(playerUUID);
+                return 0;
+            }
+        } catch (SQLException e) {
+            Bukkit.getLogger().severe("Error fetching total games: " + e.getMessage());
+        }
+        return 0; // Default value on error
     }
 }
