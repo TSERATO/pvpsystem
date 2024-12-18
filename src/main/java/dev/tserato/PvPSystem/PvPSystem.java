@@ -2,6 +2,7 @@ package dev.tserato.PvPSystem;
 
 import com.mojang.brigadier.Command;
 import dev.tserato.PvPSystem.Database.Database;
+import dev.tserato.PvPSystem.Database.StatisticsDatabase;
 import dev.tserato.PvPSystem.Expansion.PAPIExpansion;
 import dev.tserato.PvPSystem.GUI.GUIManager;
 import dev.tserato.PvPSystem.MMR.MMR;
@@ -55,6 +56,7 @@ public class PvPSystem extends JavaPlugin implements Listener {
     private final PlayerQueue queue = new PlayerQueue();
     private final Map<UUID, Boolean> spectatingPlayers = new HashMap<>();
     private final Map<UUID, BossBar> activeBossBars = new HashMap<>();
+    private final Map<UUID, UUID> pendingDuels = new HashMap<>();
     private PAPIExpansion papiExpansion;
     private MatchManager matchManager;
     private GUIManager guiManager;
@@ -87,8 +89,9 @@ public class PvPSystem extends JavaPlugin implements Listener {
         }.runTaskTimerAsynchronously(this, 0L, 20L * 60);
 
         Database.setupDatabase();
+        StatisticsDatabase.setupStatisticsDatabase();
 
-        this.papiExpansion = new PAPIExpansion(this); //
+        this.papiExpansion = new PAPIExpansion(this);
 
         papiExpansion.register();
 
@@ -187,10 +190,10 @@ public class PvPSystem extends JavaPlugin implements Listener {
                                     sender.sendMessage(Component.text("This command can only be used by players.").color(NamedTextColor.RED));
                                     return Command.SINGLE_SUCCESS;
                                 }
-                                if (Database.getWins(player.getUniqueId()) == 1) {
-                                    player.sendMessage(Component.text("You have " + Database.getWins(player.getUniqueId()) + " Win").color(NamedTextColor.GREEN));
+                                if (StatisticsDatabase.getWins(player.getUniqueId()) == 1) {
+                                    player.sendMessage(Component.text("You have " + StatisticsDatabase.getWins(player.getUniqueId()) + " Win").color(NamedTextColor.GREEN));
                                 } else {
-                                    player.sendMessage(Component.text("You have " + Database.getWins(player.getUniqueId()) + " Wins").color(NamedTextColor.GREEN));
+                                    player.sendMessage(Component.text("You have " + StatisticsDatabase.getWins(player.getUniqueId()) + " Wins").color(NamedTextColor.GREEN));
                                 }
                                 return Command.SINGLE_SUCCESS;
                             })
@@ -206,10 +209,10 @@ public class PvPSystem extends JavaPlugin implements Listener {
                                     sender.sendMessage(Component.text("This command can only be used by players.").color(NamedTextColor.RED));
                                     return Command.SINGLE_SUCCESS;
                                 }
-                                if (Database.getLosses(player.getUniqueId()) == 1) {
-                                    player.sendMessage(Component.text("You have " + Database.getLosses(player.getUniqueId()) + " Loss").color(NamedTextColor.GREEN));
+                                if (StatisticsDatabase.getLosses(player.getUniqueId()) == 1) {
+                                    player.sendMessage(Component.text("You have " + StatisticsDatabase.getLosses(player.getUniqueId()) + " Loss").color(NamedTextColor.GREEN));
                                 } else {
-                                    player.sendMessage(Component.text("You have " + Database.getLosses(player.getUniqueId()) + " Losses").color(NamedTextColor.GREEN));
+                                    player.sendMessage(Component.text("You have " + StatisticsDatabase.getLosses(player.getUniqueId()) + " Losses").color(NamedTextColor.GREEN));
                                 }
                                 return Command.SINGLE_SUCCESS;
                             })
@@ -234,6 +237,51 @@ public class PvPSystem extends JavaPlugin implements Listener {
                             ).build(),
                     "Get the MMR of players",
                     List.of("getmmr")
+            );
+            commands.register(
+                    Commands.literal("duel")
+                            .then(
+                                    Commands.argument("player", ArgumentTypes.player())
+                                            .executes(ctx -> {
+                                                CommandSender sender = ctx.getSource().getSender();
+                                                Player challenger = (Player) sender;
+                                                Player challenged = ctx.getArgument("player", PlayerSelectorArgumentResolver.class)
+                                                        .resolve(ctx.getSource())
+                                                        .getFirst();
+
+                                                handleDuelRequest(challenger, challenged);
+                                                return Command.SINGLE_SUCCESS;
+                                            })
+                            )
+                            .build(),
+                    "Challenge a player to a duel",
+                    List.of("duelchallenge")
+            );
+
+            commands.register(
+                    Commands.literal("duelaccept")
+                            .executes(ctx -> {
+                                CommandSender sender = ctx.getSource().getSender();
+                                Player player = (Player) sender;
+                                handleDuelAccept(player);
+                                return Command.SINGLE_SUCCESS;
+                            })
+                            .build(),
+                    "Accept a duel challenge",
+                    List.of("acceptduel")
+            );
+
+            commands.register(
+                    Commands.literal("dueldecline")
+                            .executes(ctx -> {
+                                CommandSender sender = ctx.getSource().getSender();
+                                Player player = (Player) sender;
+                                handleDuelDecline(player);
+                                return Command.SINGLE_SUCCESS;
+                            })
+                            .build(),
+                    "Decline a duel challenge",
+                    List.of("declineduel")
             );
         });
     }
@@ -317,6 +365,100 @@ public class PvPSystem extends JavaPlugin implements Listener {
         });
     }
 
+    private void handleDuelRequest(Player challenger, Player challenged) {
+        UUID challengerUUID = challenger.getUniqueId();
+        UUID challengedUUID = challenged.getUniqueId();
+
+        if (challenger.equals(challenged)) {
+            challenger.sendMessage(Component.text("You cannot challenge yourself to a duel.").color(NamedTextColor.RED));
+            return;
+        }
+
+        if (pendingDuels.containsKey(challengerUUID)) {
+            challenger.sendMessage(Component.text("You already have a pending duel challenge.").color(NamedTextColor.RED));
+            return;
+        }
+
+        if (pendingDuels.containsValue(challengerUUID)) {
+            challenger.sendMessage(Component.text("You cannot challenge someone while they are deciding on a duel.").color(NamedTextColor.RED));
+            return;
+        }
+
+        pendingDuels.put(challengerUUID, challengedUUID);
+
+        challenger.sendMessage(Component.text("You have challenged " + challenged.getName() + " to a duel!").color(NamedTextColor.YELLOW));
+        challenged.sendMessage(Component.text(challenger.getName() + " has challenged you to a duel!").color(NamedTextColor.YELLOW));
+        challenged.sendMessage(Component.text("Type /duelaccept to accept or /dueldecline to decline.").color(NamedTextColor.GREEN));
+    }
+
+    private void handleDuelAccept(Player challenged) {
+        UUID challengedUUID = challenged.getUniqueId();
+        UUID challengerUUID = pendingDuels.entrySet().stream()
+                .filter(entry -> entry.getValue().equals(challengedUUID))
+                .map(Map.Entry::getKey)
+                .findFirst()
+                .orElse(null);
+
+        if (challengerUUID == null) {
+            challenged.sendMessage(Component.text("You have no pending duel requests.").color(NamedTextColor.RED));
+            return;
+        }
+
+        Player challenger = Bukkit.getPlayer(challengerUUID);
+        if (challenger == null || !challenger.isOnline()) {
+            challenged.sendMessage(Component.text("The challenger is no longer online.").color(NamedTextColor.RED));
+            pendingDuels.remove(challengerUUID);
+            return;
+        }
+
+        pendingDuels.remove(challengerUUID);
+
+        String arenaName = "duel_arena_" + UUID.randomUUID().toString().substring(0, 8);
+        World arenaWorld = createArenaWorld(arenaName);
+
+        if (arenaWorld != null) {
+            challenger.sendMessage(Component.text("Your duel is starting! Teleporting to the arena...").color(NamedTextColor.GREEN));
+            challenged.sendMessage(Component.text("Your duel is starting! Teleporting to the arena...").color(NamedTextColor.GREEN));
+
+            Location loc1 = new Location(arenaWorld, 0, -60, 10, 180, 0);
+            Location loc2 = new Location(arenaWorld, 0, -60, -10);
+            teleportWithCountdown(challenger, loc1);
+            teleportWithCountdown(challenged, loc2);
+
+            playerArenaMap.put(challengerUUID, arenaWorld);
+            playerArenaMap.put(challengedUUID, arenaWorld);
+
+            // Add the duel match to the match manager (non-ranked)
+            Match match = new Match(challenger, challenged, arenaWorld);
+            matchManager.addMatch(match);
+        } else {
+            challenger.sendMessage(Component.text("Failed to create duel arena. Please contact the server admins.").color(NamedTextColor.RED));
+            challenged.sendMessage(Component.text("Failed to create duel arena. Please contact the server admins.").color(NamedTextColor.RED));
+        }
+    }
+
+    private void handleDuelDecline(Player challenged) {
+        UUID challengedUUID = challenged.getUniqueId();
+        UUID challengerUUID = pendingDuels.entrySet().stream()
+                .filter(entry -> entry.getValue().equals(challengedUUID))
+                .map(Map.Entry::getKey)
+                .findFirst()
+                .orElse(null);
+
+        if (challengerUUID == null) {
+            challenged.sendMessage(Component.text("You have no pending duel requests to decline.").color(NamedTextColor.RED));
+            return;
+        }
+
+        Player challenger = Bukkit.getPlayer(challengerUUID);
+        if (challenger != null && challenger.isOnline()) {
+            challenger.sendMessage(Component.text(challenged.getName() + " has declined your duel request.").color(NamedTextColor.RED));
+        }
+
+        challenged.sendMessage(Component.text("You have declined the duel request.").color(NamedTextColor.YELLOW));
+        pendingDuels.remove(challengerUUID);
+    }
+
     public void openTopMMRGUI(Player player) {
         // Fetch the top placeholders from the PAPIExpansion class
         Map<String, String> topMMRPlaceholders = papiExpansion.getTopMMRPlaceholders();
@@ -394,8 +536,9 @@ public class PvPSystem extends JavaPlugin implements Listener {
         UUID playerUUID = clickedPlayer.getUniqueId();
 
         // Fetch the player's statistics (wins, losses, and total games)
-        String winStats = String.valueOf(Database.getWins(playerUUID));
-        String lossStats = String.valueOf(Database.getLosses(playerUUID));
+        String winStats = String.valueOf(StatisticsDatabase.getWins(playerUUID));
+        String lossStats = String.valueOf(StatisticsDatabase.getLosses(playerUUID));
+        String totalGamesStats = String.valueOf(StatisticsDatabase.getTotalGames(playerUUID));
 
         // Create a new inventory for displaying the player's stats
         Inventory statsInventory = Bukkit.createInventory(null, 9, "Player Stats - " + clickedPlayer.getName());
@@ -404,6 +547,9 @@ public class PvPSystem extends JavaPlugin implements Listener {
         ItemStack winsItem = new ItemStack(Material.NETHERITE_SWORD);
         ItemMeta winsMeta = winsItem.getItemMeta();
 
+        ItemStack totalGamesItem = new ItemStack(Material.PAPER);
+        ItemMeta totalGamesMeta = totalGamesItem.getItemMeta();
+
         ItemStack lossItem = new ItemStack(Material.WOODEN_SWORD);
         ItemMeta lossMeta = lossItem.getItemMeta();
 
@@ -411,7 +557,6 @@ public class PvPSystem extends JavaPlugin implements Listener {
             // Set the display name and lore (stats)
             winsMeta.setDisplayName(ChatColor.GREEN + "Wins for " + clickedPlayer.getName());
             winsMeta.setLore(Arrays.asList(
-                    ChatColor.AQUA + "MMR: " + Database.getMMR(playerUUID),
                     ChatColor.GRAY + winStats
             ));
 
@@ -422,15 +567,25 @@ public class PvPSystem extends JavaPlugin implements Listener {
             // Set the display name and lore (stats)
             lossMeta.setDisplayName(ChatColor.RED + "Losses for " + clickedPlayer.getName());
             lossMeta.setLore(Arrays.asList(
-                    ChatColor.AQUA + "MMR: " + Database.getMMR(playerUUID),
                     ChatColor.GRAY + lossStats
             ));
 
             lossItem.setItemMeta(lossMeta);
         }
 
+        if (totalGamesMeta != null) {
+            // Set the display name and lore (stats)
+            totalGamesMeta.setDisplayName(ChatColor.AQUA + "Total Games for " + clickedPlayer.getName());
+            totalGamesMeta.setLore(Arrays.asList(
+                    ChatColor.GRAY + totalGamesStats
+            ));
+
+            totalGamesItem.setItemMeta(totalGamesMeta);
+        }
+
         // Set the stats item in the center slot
         statsInventory.setItem(2, winsItem);
+        statsInventory.setItem(4, totalGamesItem);
         statsInventory.setItem(6, lossItem);
 
         // Open the stats inventory for the viewer (the player who clicked the head)
@@ -470,6 +625,9 @@ public class PvPSystem extends JavaPlugin implements Listener {
         // Update MMR and ranks in the database
         Database.setMMR(winner.getUniqueId(), newWinnerMMR);
         Database.setMMR(loser.getUniqueId(), newLoserMMR);
+
+        StatisticsDatabase.incrementWins(winner.getUniqueId());
+        StatisticsDatabase.incrementLosses(loser.getUniqueId());
 
         // Check if the winner or loser has ranked up or down
         boolean winnerRankedUp = !oldWinnerRank.equals(newWinnerRank);
@@ -815,6 +973,53 @@ public class PvPSystem extends JavaPlugin implements Listener {
                     .filter(match -> match.getArenaWorld().equals(arenaWorld))
                     .findFirst().ifPresent(matchToRemove -> matchManager.removeMatch(matchToRemove));
 
+        } else if (arenaWorld != null && arenaWorld.getName().startsWith("duel_arena_") && !spectatingPlayers.getOrDefault(player.getUniqueId(), false)) {
+            // Determine the remaining player in the arena
+            Player winner = null;
+            for (Player p : arenaWorld.getPlayers()) {
+                if (!p.equals(player) && p.isOnline()) {
+                    winner = p; // The remaining player becomes the winner
+                    break;
+                }
+            }
+
+            if (winner != null) {
+                // Declare final reference for inner class
+                final Player finalWinner = winner;
+
+                finalWinner.setHealth(20);
+                clearAllPotionEffects(finalWinner);
+
+                spectatingPlayers.put(finalWinner.getUniqueId(), true);
+
+                Location locWinner = new Location(arenaWorld, 0, -60, -10);
+                finalWinner.teleport(locWinner);
+
+                finalWinner.getInventory().clear();
+
+                // Schedule teleportation back to the lobby
+                winnerTimeMap.put(finalWinner.getUniqueId(), System.currentTimeMillis());
+                new BukkitRunnable() {
+                    @Override
+                    public void run() {
+                        if (finalWinner.isOnline()) {
+                            finalWinner.teleport(Objects.requireNonNull(Bukkit.getWorld("world")).getSpawnLocation());
+                            finalWinner.sendMessage(Component.text("Teleporting back to lobby.").color(NamedTextColor.YELLOW));
+                            spectatingPlayers.put(finalWinner.getUniqueId(), false);
+                            finalWinner.getInventory().clear();
+                        }
+                        deleteArenaWorld(arenaWorld);
+                    }
+                }.runTaskLater(this, 20L * 15);
+            } else {
+                // No remaining player, just delete the arena
+                deleteArenaWorld(arenaWorld);
+            }
+
+            // Remove the match from MatchManager
+            matchManager.getActiveMatches().stream()
+                    .filter(match -> match.getArenaWorld().equals(arenaWorld))
+                    .findFirst().ifPresent(matchToRemove -> matchManager.removeMatch(matchToRemove));
         }
 
         playerArenaMap.remove(player.getUniqueId());
@@ -822,7 +1027,7 @@ public class PvPSystem extends JavaPlugin implements Listener {
 
     private void checkAndDeleteArenaWorld(World world) {
         // Check if the world name starts with "arena_"
-        if (world.getName().startsWith("arena_")) {
+        if (world.getName().startsWith("arena_") || world.getName().startsWith("duel_arena_")) {
             // Check if the world is empty
             long playerCount = world.getPlayers().size();
             if (playerCount == 0) {
@@ -864,7 +1069,7 @@ public class PvPSystem extends JavaPlugin implements Listener {
 
     @EventHandler
     public void onMobSpawn(EntitySpawnEvent event) {
-        if (event.getLocation().getWorld().getName().startsWith("arena_")) {
+        if (event.getLocation().getWorld().getName().startsWith("arena_") || event.getLocation().getWorld().getName().startsWith("duel_arena_")) {
             if(event.getEntity().getType().isAlive()) {
                 event.setCancelled(true);
             }
@@ -944,6 +1149,64 @@ public class PvPSystem extends JavaPlugin implements Listener {
 
                 // Handle MMR adjustments
                 handleMMRAfterMatch(winner, player);
+
+                // Remove the match from the MatchManager
+                matchManager.getActiveMatches().stream()
+                        .filter(match -> match.getArenaWorld().equals(arenaWorld))
+                        .findFirst().ifPresent(matchToRemove -> matchManager.removeMatch(matchToRemove));
+            } else if (player.getWorld().getName().startsWith("duel_arena_")) {
+                Player winner = player.getKiller();
+                World arenaWorld = playerArenaMap.get(player.getUniqueId());
+
+                // Cancel the death event
+                event.setCancelled(true);
+
+                assert winner != null;
+
+                // Reset players and handle cleanup
+                winner.setHealth(20);
+                player.setHealth(20);
+
+                winner.getInventory().clear();
+                player.getInventory().clear();
+
+                spectatingPlayers.put(winner.getUniqueId(), true);
+                spectatingPlayers.put(player.getUniqueId(), true);
+
+                updateTabAppearance(winner, false);
+                updateTabAppearance(player, false);
+
+                clearAllPotionEffects(winner);
+                clearAllPotionEffects(player);
+
+                clearEntitiesExceptPlayers(arenaWorld);
+
+                Location loc1 = new Location(arenaWorld, 0, -60, 10, 180, 0);
+                Location loc2 = new Location(arenaWorld, 0, -60, -10);
+                player.teleport(loc1);
+                winner.teleport(loc2);
+
+                winner.showTitle(Title.title(Component.text("You Won!").color(NamedTextColor.GREEN), Component.text("")));
+                winner.showTitle(Title.title(Component.text("You Lost!").color(NamedTextColor.RED), Component.text("")));
+
+                winnerTimeMap.put(winner.getUniqueId(), System.currentTimeMillis());
+
+                new BukkitRunnable() {
+                    @Override
+                    public void run() {
+                        if (winner.isOnline()) {
+                            winner.teleport(Objects.requireNonNull(Bukkit.getWorld("world")).getSpawnLocation());
+                            player.teleport(Objects.requireNonNull(Bukkit.getWorld("world")).getSpawnLocation());
+                            winner.sendMessage(Component.text("Teleporting back to lobby.").color(NamedTextColor.YELLOW));
+                            player.sendMessage(Component.text("Teleporting back to lobby.").color(NamedTextColor.YELLOW));
+                            spectatingPlayers.put(player.getUniqueId(), false);
+                            spectatingPlayers.put(winner.getUniqueId(), false);
+                            winner.getInventory().clear();
+                            player.getInventory().clear();
+                        }
+                        deleteArenaWorld(arenaWorld);
+                    }
+                }.runTaskLater(this, 20L * 15);
 
                 // Remove the match from the MatchManager
                 matchManager.getActiveMatches().stream()

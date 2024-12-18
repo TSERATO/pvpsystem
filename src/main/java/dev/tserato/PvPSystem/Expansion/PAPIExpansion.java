@@ -1,6 +1,7 @@
 package dev.tserato.PvPSystem.Expansion;
 
 import dev.tserato.PvPSystem.Database.Database;
+import dev.tserato.PvPSystem.Database.StatisticsDatabase;
 import me.clip.placeholderapi.expansion.PlaceholderExpansion;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
@@ -57,6 +58,18 @@ public class PAPIExpansion extends PlaceholderExpansion {
 
         if (params.equalsIgnoreCase("position_in_percent")) {
             return getPlayerPositionInPercent(player.getUniqueId());
+        }
+
+        if (params.equalsIgnoreCase("wins")) {
+            return String.valueOf(StatisticsDatabase.getWins(player.getUniqueId()));
+        }
+
+        if (params.equalsIgnoreCase("losses")) {
+            return String.valueOf(StatisticsDatabase.getLosses(player.getUniqueId()));
+        }
+
+        if (params.equalsIgnoreCase("total_games")) {
+            return String.valueOf(StatisticsDatabase.getTotalGames(player.getUniqueId()));
         }
 
         return null;
