@@ -36,14 +36,12 @@ import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.scheduler.BukkitRunnable;
-import org.bukkit.scheduler.BukkitTask;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.*;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static dev.tserato.PvPSystem.MMR.MMR.getRankForMMR;
@@ -677,7 +675,7 @@ public class PvPSystem extends JavaPlugin implements Listener {
         final long animationDelay = 20L; // 1 second in ticks
 
         // Calculate intermediate colors for the gradient
-        List<NamedTextColor> colorGradient = createColorGradient(oldColor, newColor, animationSteps);
+        List<NamedTextColor> colorGradient = createColorGradient(oldColor, newColor);
 
         // Use AtomicInteger to store task ID, which can be modified later
         AtomicInteger taskId = new AtomicInteger();
@@ -718,10 +716,9 @@ public class PvPSystem extends JavaPlugin implements Listener {
      *
      * @param startColor The starting color of the gradient.
      * @param endColor   The ending color of the gradient.
-     * @param steps      The number of steps in the gradient.
      * @return A list of NamedTextColors representing the gradient.
      */
-    private List<NamedTextColor> createColorGradient(NamedTextColor startColor, NamedTextColor endColor, int steps) {
+    private List<NamedTextColor> createColorGradient(NamedTextColor startColor, NamedTextColor endColor) {
         List<NamedTextColor> gradient = new ArrayList<>();
         int startRed = startColor.red();
         int startGreen = startColor.red();
@@ -731,8 +728,8 @@ public class PvPSystem extends JavaPlugin implements Listener {
         int endGreen = endColor.green();
         int endBlue = endColor.blue();
 
-        for (int i = 0; i <= steps; i++) {
-            double ratio = (double) i / steps;
+        for (int i = 0; i <= 3; i++) {
+            double ratio = (double) i / 3;
             int red = (int) (startRed + (endRed - startRed) * ratio);
             int green = (int) (startGreen + (endGreen - startGreen) * ratio);
             int blue = (int) (startBlue + (endBlue - startBlue) * ratio);
@@ -1316,9 +1313,20 @@ public class PvPSystem extends JavaPlugin implements Listener {
         }
     }
 
+    @EventHandler
+    public void onJoin(PlayerJoinEvent event) {
+        Player player = event.getPlayer();
+        event.joinMessage(Component.text("[").color(NamedTextColor.GRAY).append(Component.text("+").color(NamedTextColor.GREEN).append(Component.text("] ").color(NamedTextColor.GRAY).append(Component.text(player.getName()).color(NamedTextColor.GRAY)))));
+    }
+
+    @EventHandler
+    public void onQuit(PlayerQuitEvent event) {
+        Player player = event.getPlayer();
+        event.quitMessage(Component.text("[").color(NamedTextColor.GRAY).append(Component.text("-").color(NamedTextColor.RED).append(Component.text("] ").color(NamedTextColor.GRAY).append(Component.text(player.getName()).color(NamedTextColor.GRAY)))));
+    }
+
     @Override
     public void onDisable() {
-        assignPlayerTitles();
         getLogger().info("Shutting down PvPSystem");
     }
 }
