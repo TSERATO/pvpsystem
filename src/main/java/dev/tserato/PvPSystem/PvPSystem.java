@@ -295,6 +295,8 @@ public class PvPSystem extends JavaPlugin implements Listener {
             Database.setMMR(playerUUID, playerMMR);  // Save the default MMR
         }
 
+        assignPlayerTitles();
+
         // Add player to the queue
         queue.addPlayer(player, playerMMR);
         player.sendMessage(Component.text("Looking for a ranked match...").color(NamedTextColor.YELLOW));
@@ -603,6 +605,9 @@ public class PvPSystem extends JavaPlugin implements Listener {
     }
 
     private void handleMMRAfterMatch(Player winner, Player loser) {
+
+        assignPlayerTitles();
+
         int winnerMMR = Database.getMMR(winner.getUniqueId());
         int loserMMR = Database.getMMR(loser.getUniqueId());
 
@@ -932,6 +937,8 @@ public class PvPSystem extends JavaPlugin implements Listener {
                 }
             }
 
+            assignPlayerTitles();
+
             if (winner != null) {
                 // Declare final reference for inner class
                 final Player finalWinner = winner;
@@ -982,6 +989,8 @@ public class PvPSystem extends JavaPlugin implements Listener {
                     break;
                 }
             }
+
+            assignPlayerTitles();
 
             if (winner != null) {
                 // Declare final reference for inner class
@@ -1105,6 +1114,8 @@ public class PvPSystem extends JavaPlugin implements Listener {
 
                 assert winner != null;
 
+                assignPlayerTitles();
+
                 // Reset players and handle cleanup
                 winner.setHealth(20);
                 player.setHealth(20);
@@ -1162,6 +1173,8 @@ public class PvPSystem extends JavaPlugin implements Listener {
                 event.setCancelled(true);
 
                 assert winner != null;
+
+                assignPlayerTitles();
 
                 // Reset players and handle cleanup
                 winner.setHealth(20);
@@ -1231,8 +1244,81 @@ public class PvPSystem extends JavaPlugin implements Listener {
         }
     }
 
+    public void assignPlayerTitles() {
+        Bukkit.getScheduler().runTaskAsynchronously(this, () -> { // Run asynchronously for database operations
+            try {
+                // Fetch all players from the database
+                List<UUID> allPlayerUUIDs = Database.getAllPlayers();
+                List<PlayerMMR> playerMMRs = new ArrayList<>();
+
+                for (UUID uuid : allPlayerUUIDs) {
+                    int mmr = Database.getMMR(uuid);
+                    playerMMRs.add(new PlayerMMR(uuid, mmr));
+                }
+
+                // Sort players by MMR in descending order
+                playerMMRs.sort((a, b) -> Integer.compare(b.getMMR(), a.getMMR()));
+
+                // Determine rankings
+                int totalPlayers = playerMMRs.size();
+                int top1Index = 0; // Highest ranking player (Champion)
+                int top5PercentIndex = Math.max((int) (totalPlayers * 0.05) - 1, 0);
+                int top10PercentIndex = Math.max((int) (totalPlayers * 0.10) - 1, 0);
+
+                // Assign titles
+                for (int i = 0; i < playerMMRs.size(); i++) {
+                    PlayerMMR player = playerMMRs.get(i);
+                    String playerName = Bukkit.getOfflinePlayer(player.getUuid()).getName();
+
+                    if (i == top1Index) {
+                        // Champion title for the top player
+                        assignLuckPermsTitle(playerName, "champion");
+                    } else if (i <= top5PercentIndex) {
+                        // Duelist title for top 5% players
+                        assignLuckPermsTitle(playerName, "duelist");
+                    } else if (i <= top10PercentIndex) {
+                        // Gladiator title for top 10% players
+                        assignLuckPermsTitle(playerName, "gladiator");
+                    } else {
+                        // Reset the title for others (optional)
+                        assignLuckPermsTitle(playerName, "default");
+                    }
+                }
+
+            } catch (Exception e) {
+                Bukkit.getLogger().severe("Error assigning titles: " + e.getMessage());
+            }
+        });
+    }
+
+    // Helper method to assign LuckPerms title
+    private void assignLuckPermsTitle(String playerName, String title) {
+        if (playerName == null) return;
+        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "/lp user " + playerName + " parent set " + title);
+    }
+
+    // Data structure for storing player MMR
+    private static class PlayerMMR {
+        private final UUID uuid;
+        private final int mmr;
+
+        public PlayerMMR(UUID uuid, int mmr) {
+            this.uuid = uuid;
+            this.mmr = mmr;
+        }
+
+        public UUID getUuid() {
+            return uuid;
+        }
+
+        public int getMMR() {
+            return mmr;
+        }
+    }
+
     @Override
     public void onDisable() {
+        assignPlayerTitles();
         getLogger().info("Shutting down PvPSystem");
     }
 }

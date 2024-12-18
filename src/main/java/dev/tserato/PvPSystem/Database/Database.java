@@ -4,6 +4,7 @@ import org.bukkit.Bukkit;
 
 import java.sql.*;
 import java.util.UUID;
+import java.util.*;
 
 public class Database {
     private static final String DATABASE_URL = "jdbc:sqlite:" + Bukkit.getPluginManager().getPlugin("PvPSystem").getDataFolder() + "/pvpsystem.db";
@@ -78,5 +79,36 @@ public class Database {
         } catch (SQLException e) {
             Bukkit.getLogger().severe("Error setting title: " + e.getMessage());
         }
+    }
+
+    public static String getTitle(UUID playerUUID) {
+        try (Connection conn = DriverManager.getConnection(DATABASE_URL);
+             PreparedStatement stmt = conn.prepareStatement("SELECT title FROM players WHERE uuid = ?")) {
+            stmt.setString(1, playerUUID.toString());
+            ResultSet rs = stmt.executeQuery();
+            if (rs.next()) {
+                return rs.getString("title");
+            } else {
+                insertDefaultPlayer(playerUUID);
+                return "None"; // Default title
+            }
+        } catch (SQLException e) {
+            Bukkit.getLogger().severe("Error fetching title for player " + playerUUID + ": " + e.getMessage());
+        }
+        return "None"; // Default title on error
+    }
+
+    public static List<UUID> getAllPlayers() {
+        List<UUID> playerUUIDs = new ArrayList<>();
+        try (Connection conn = DriverManager.getConnection(DATABASE_URL);
+             PreparedStatement stmt = conn.prepareStatement("SELECT uuid FROM players");
+             ResultSet rs = stmt.executeQuery()) {
+            while (rs.next()) {
+                playerUUIDs.add(UUID.fromString(rs.getString("uuid")));
+            }
+        } catch (SQLException e) {
+            Bukkit.getLogger().severe("Error fetching player UUIDs: " + e.getMessage());
+        }
+        return playerUUIDs;
     }
 }
