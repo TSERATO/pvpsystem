@@ -955,7 +955,7 @@ public class PvPSystem extends JavaPlugin implements Listener {
                 new BukkitRunnable() {
                     @Override
                     public void run() {
-                        if (finalWinner.isOnline()) {
+                        if (finalWinner.isOnline() && finalWinner.getWorld().getName().startsWith("arena_") || finalWinner.isOnline() && finalWinner.getWorld().getName().startsWith("duel_arena_")) {
                             finalWinner.teleport(Objects.requireNonNull(Bukkit.getWorld("world")).getSpawnLocation());
                             finalWinner.sendMessage(Component.text("Teleporting back to lobby.").color(NamedTextColor.YELLOW));
                             spectatingPlayers.put(finalWinner.getUniqueId(), false);
@@ -1008,7 +1008,7 @@ public class PvPSystem extends JavaPlugin implements Listener {
                 new BukkitRunnable() {
                     @Override
                     public void run() {
-                        if (finalWinner.isOnline()) {
+                        if (finalWinner.isOnline() && finalWinner.getWorld().getName().startsWith("arena_") || finalWinner.isOnline() && finalWinner.getWorld().getName().startsWith("duel_arena_")) {
                             finalWinner.teleport(Objects.requireNonNull(Bukkit.getWorld("world")).getSpawnLocation());
                             finalWinner.sendMessage(Component.text("Teleporting back to lobby.").color(NamedTextColor.YELLOW));
                             spectatingPlayers.put(finalWinner.getUniqueId(), false);
@@ -1141,7 +1141,7 @@ public class PvPSystem extends JavaPlugin implements Listener {
                 new BukkitRunnable() {
                     @Override
                     public void run() {
-                        if (winner.isOnline()) {
+                        if (winner.isOnline() && winner.getWorld().getName().startsWith("arena_") || winner.isOnline() && winner.getWorld().getName().startsWith("duel_arena_") || player.isOnline() && player.getWorld().getName().startsWith("arena_") || player.isOnline() && player.getWorld().getName().startsWith("duel_arena_")) {
                             winner.teleport(Objects.requireNonNull(Bukkit.getWorld("world")).getSpawnLocation());
                             player.teleport(Objects.requireNonNull(Bukkit.getWorld("world")).getSpawnLocation());
                             winner.sendMessage(Component.text("Teleporting back to lobby.").color(NamedTextColor.YELLOW));
@@ -1204,7 +1204,7 @@ public class PvPSystem extends JavaPlugin implements Listener {
                 new BukkitRunnable() {
                     @Override
                     public void run() {
-                        if (winner.isOnline()) {
+                        if (winner.isOnline() && winner.getWorld().getName().startsWith("arena_") || winner.isOnline() && winner.getWorld().getName().startsWith("duel_arena_") || player.isOnline() && player.getWorld().getName().startsWith("arena_") || player.isOnline() && player.getWorld().getName().startsWith("duel_arena_")) {
                             winner.teleport(Objects.requireNonNull(Bukkit.getWorld("world")).getSpawnLocation());
                             player.teleport(Objects.requireNonNull(Bukkit.getWorld("world")).getSpawnLocation());
                             winner.sendMessage(Component.text("Teleporting back to lobby.").color(NamedTextColor.YELLOW));
